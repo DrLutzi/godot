@@ -1,3 +1,4 @@
+#include "core/object/class_db.h"
 #include "image_pyramid.h"
 #include "texsyn.h"
 
@@ -165,6 +166,34 @@ void ProceduralSampling::set_ao(Ref<Image> image)
 	m_textureTypeFlag = m_textureTypeFlag | AMBIENT_OCCLUSION;
 	m_imageRefs[texsyn_log2(AMBIENT_OCCLUSION)] = image;
 	return;
+}
+
+void ProceduralSampling::set_component(TextureTypeFlag type, Ref<Image> image)
+{
+	switch(type)
+	{
+		case ALBEDO:
+			set_albedo(image);
+			break;
+		case NORMAL:
+			set_normal(image);
+			break;
+		case HEIGHT:
+			set_height(image);
+			break;
+		case ROUGHNESS:
+			set_roughness(image);
+			break;
+		case METALLIC:
+			set_metallic(image);
+			break;
+		case AMBIENT_OCCLUSION:
+			set_ao(image);
+			break;
+		default:
+			ERR_FAIL_MSG("Component not supported yet.");
+			break;
+	}
 }
 
 void ProceduralSampling::spatiallyVaryingMeanToAlbedo(Ref<Image> image)
@@ -352,6 +381,34 @@ void ProceduralSampling::spatiallyVaryingMeanToAO(Ref<Image> image)
 	return;
 }
 
+void ProceduralSampling::spatiallyVaryingMeanToComponent(TextureTypeFlag type, Ref<Image> image)
+{
+	switch(type)
+	{
+		case ALBEDO:
+			spatiallyVaryingMeanToAlbedo(image);
+			break;
+		case NORMAL:
+			spatiallyVaryingMeanToNormal(image);
+			break;
+		case HEIGHT:
+			spatiallyVaryingMeanToHeight(image);
+			break;
+		case ROUGHNESS:
+			spatiallyVaryingMeanToRoughness(image);
+			break;
+		case METALLIC:
+			spatiallyVaryingMeanToMetallic(image);
+			break;
+		case AMBIENT_OCCLUSION:
+			spatiallyVaryingMeanToAO(image);
+			break;
+		default:
+			ERR_FAIL_MSG("Component not supported yet.");
+			break;
+	}
+}
+
 void ProceduralSampling::set_cyclostationaryPeriods(Vector2 t0, Vector2 t1)
 {
 	TexSyn::SamplerPeriods *sampler = memnew(TexSyn::SamplerPeriods(0));
@@ -404,7 +461,7 @@ void ProceduralSampling::samplerPdfToImage(Ref<Image> image)
 	const TexSyn::SamplerImportance *si = dynamic_cast<const TexSyn::SamplerImportance *>(m_proceduralSampling.sampler());
 	ERR_FAIL_COND_MSG(si == nullptr, "importance sampler must be set with computeAutocovarianceSampler().");
 	Ref<Image> refPdf;
-	refPdf = Image::create_empty(image->get_width(), image->get_height(), false, Image::FORMAT_RF);
+	refPdf = Image::create_empty(si->importanceFunction().get_width(), si->importanceFunction().get_height(), false, Image::FORMAT_RF);
 	si->importanceFunction().toImage(refPdf, 0);
 	image->copy_from(refPdf);
 	return;
@@ -442,19 +499,19 @@ void ProceduralSampling::centerExemplar(Ref<Image> exemplar, Ref<Image> mean)
 
 void ProceduralSampling::_bind_methods()
 {
-	ClassDB::bind_method(D_METHOD("set_albedo", "image"), &ProceduralSampling::set_albedo);
-	ClassDB::bind_method(D_METHOD("set_normal", "image"), &ProceduralSampling::set_normal);
-	ClassDB::bind_method(D_METHOD("set_height", "image"), &ProceduralSampling::set_height);
-	ClassDB::bind_method(D_METHOD("set_roughness", "image"), &ProceduralSampling::set_roughness);
-	ClassDB::bind_method(D_METHOD("set_metallic", "image"), &ProceduralSampling::set_metallic);
-	ClassDB::bind_method(D_METHOD("set_ao", "image"), &ProceduralSampling::set_ao);
+	BIND_ENUM_CONSTANT(ALBEDO);
+	BIND_ENUM_CONSTANT(NORMAL);
+	BIND_ENUM_CONSTANT(HEIGHT);
+	BIND_ENUM_CONSTANT(ROUGHNESS);
+	BIND_ENUM_CONSTANT(METALLIC);
+	BIND_ENUM_CONSTANT(AMBIENT_OCCLUSION);
+	BIND_ENUM_CONSTANT(SPECULAR);
+	BIND_ENUM_CONSTANT(ALPHA);
+	BIND_ENUM_CONSTANT(RIM);
 
-	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToAlbedo", "image"), &ProceduralSampling::spatiallyVaryingMeanToAlbedo);
-	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToNormal", "image"), &ProceduralSampling::spatiallyVaryingMeanToNormal);
-	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToHeight", "image"), &ProceduralSampling::spatiallyVaryingMeanToHeight);
-	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToRoughness", "image"), &ProceduralSampling::spatiallyVaryingMeanToRoughness);
-	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToMetallic", "image"), &ProceduralSampling::spatiallyVaryingMeanToMetallic);
-	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToAO", "image"), &ProceduralSampling::spatiallyVaryingMeanToAO);
+	ClassDB::bind_method(D_METHOD("set_albedo", "component", "image"), &ProceduralSampling::set_component);
+
+	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToComponent", "component", "image"), &ProceduralSampling::spatiallyVaryingMeanToComponent);
 
 	ClassDB::bind_method(D_METHOD("set_cyclostationaryPeriods", "t0", "t1"), &ProceduralSampling::set_cyclostationaryPeriods);
 	ClassDB::bind_method(D_METHOD("set_importancePDF", "image"), &ProceduralSampling::set_importancePDF);

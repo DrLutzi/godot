@@ -411,7 +411,7 @@ void ImageScalar<T>::fromImage(Ref<Image> image)
 	for_all_pixels([&] (DataType &pix, int x, int y)
 	{
 		Color c = image->get_pixel(x, y);
-		pix = DataType(c.get_luminance());
+		pix = DataType(c.r);
 	});
 }
 

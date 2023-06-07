@@ -88,12 +88,16 @@ public:
 	void set_metallic(Ref<Image> image);
 	void set_ao(Ref<Image> image);
 
+	void set_component(TextureTypeFlag type, Ref<Image> image);
+
 	void spatiallyVaryingMeanToAlbedo(Ref<Image> image);
 	void spatiallyVaryingMeanToNormal(Ref<Image> image);
 	void spatiallyVaryingMeanToHeight(Ref<Image> image);
 	void spatiallyVaryingMeanToRoughness(Ref<Image> image);
 	void spatiallyVaryingMeanToMetallic(Ref<Image> image);
 	void spatiallyVaryingMeanToAO(Ref<Image> image);
+
+	void spatiallyVaryingMeanToComponent(TextureTypeFlag type, Ref<Image> image);
 
 	void set_cyclostationaryPeriods(Vector2 t0, Vector2 t1);
 	void set_importancePDF(Ref<Image> image);
@@ -126,6 +130,8 @@ private:
 #ifdef TEXSYN_TESTS
 
 bool texsyn_tests();
+
+VARIANT_ENUM_CAST(ProceduralSampling::TextureTypeFlag);
 
 #endif //ifdef TEXSYN_TESTS
 
