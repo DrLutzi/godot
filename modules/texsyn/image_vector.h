@@ -40,8 +40,8 @@ public:
 
 	~ImageVector();
 
-	void init(unsigned int width, unsigned int height,
-			  unsigned int nbDimensions, bool initToZero=false);
+	void init(	unsigned int width, unsigned int height,
+				unsigned int nbDimensions, bool initToZero=false);
 	bool is_initialized() const;
 
 	DataType get_pixelInterp(double x, double y, int d) const;
@@ -63,7 +63,7 @@ public:
 
 	void set_pixel(int x, int y, int d, DataType value);
 	void set_pixel(int x, int y, const VectorType &v);
-    void set_rect(const ImageVector<T> &rect, int x, int y);
+	void set_rect(const ImageVector<T> &rect, int x, int y);
 
 	void fromImage(Ref<Image> image);
 	void toImage(Ref<Image> image) const;
@@ -77,14 +77,14 @@ public:
 	ImageVector<T> &operator+=(const ImageVector<T> &other);
 	ImageVector<T> &operator-=(const ImageVector<T> &other);
 	ImageVector<T> &operator*=(const ImageVector<T> &other);
-    ImageVector<T> &operator/=(const ImageVector<T> &other);
-    ImageVector<T> &operator^=(const ImageScalar<T> &kernel);
+	ImageVector<T> &operator/=(const ImageVector<T> &other);
+	ImageVector<T> &operator^=(const ImageScalar<T> &kernel);
 
 	ImageVector<T> operator+(const ImageVector<T> &other) const;
 	ImageVector<T> operator-(const ImageVector<T> &other) const;
 	ImageVector<T> operator*(const ImageVector<T> &other) const;
 	ImageVector<T> operator/(const ImageVector<T> &other) const;
-    ImageVector<T> operator^(const ImageScalar<T> &kernel) const;
+	ImageVector<T> operator^(const ImageScalar<T> &kernel) const;
 
 	//Operators: with a scalar
 	ImageVector<T> &operator+=(const DataType &s);
@@ -113,13 +113,13 @@ public:
 	void parallel_for_all_images(const std::function<void (ImageScalarType &, unsigned int)> &f);
 	void parallel_for_all_images(const std::function<void (const ImageScalarType &, unsigned int)> &f) const;
 
-    void parallel_for_all_pixels(const std::function<void(DataType &)>& f);
-    void parallel_for_all_pixels(const std::function<void(DataType &, int, int)>& f);
+	void parallel_for_all_pixels(const std::function<void(DataType &)>& f);
+	void parallel_for_all_pixels(const std::function<void(DataType &, int, int)>& f);
 
-    void parallel_for_all_pixels(const std::function<void(const DataType &)>& f) const;
-    void parallel_for_all_pixels(const std::function<void(const DataType &, int, int)>& f) const;
+	void parallel_for_all_pixels(const std::function<void(const DataType &)>& f) const;
+	void parallel_for_all_pixels(const std::function<void(const DataType &, int, int)>& f) const;
 
-    static ImageVector<T> cos(const ImageVector<T> &img);
+	static ImageVector<T> cos(const ImageVector<T> &img);
 
 private:
 
@@ -483,16 +483,16 @@ ImageVector<T> &ImageVector<T>::operator/=(const ImageVector<T> &other)
 template<typename T>
 ImageVector<T> &ImageVector<T>::operator^=(const ImageScalar<T> &kernel)
 {
-    auto for_image_range = [kernel](SubImage subImage)
-    {
-        for(int i=subImage.startIndex; i<subImage.endIndex; ++i)
-        {
-            subImage.image[i] ^= kernel;
-        }
-    };
+	auto for_image_range = [kernel](SubImage subImage)
+	{
+		for(int i=subImage.startIndex; i<subImage.endIndex; ++i)
+		{
+			subImage.image[i] ^= kernel;
+		}
+	};
 
-    parallel_for_all_images(for_image_range);
-    return *this;
+	parallel_for_all_images(for_image_range);
+	return *this;
 }
 
 template<typename T>
@@ -566,17 +566,17 @@ ImageVector<T> ImageVector<T>::operator/(const ImageVector<T> &other) const
 template<typename T>
 ImageVector<T> ImageVector<T>::operator^(const ImageScalar<T> &kernel) const
 {
-    auto for_image_range = [kernel](SubImage subImage)
-    {
-        for(int i=subImage.startIndex; i<subImage.endIndex; ++i)
-        {
-            subImage.image[i] ^= kernel;
-        }
-    };
+	auto for_image_range = [kernel](SubImage subImage)
+	{
+		for(int i=subImage.startIndex; i<subImage.endIndex; ++i)
+		{
+			subImage.image[i] ^= kernel;
+		}
+	};
 
-    ImageVector<T> output = *this;
-    output.parallel_for_all_images(for_image_range);
-    return output;
+	ImageVector<T> output = *this;
+	output.parallel_for_all_images(for_image_range);
+	return output;
 }
 
 //Operators: with a scalar
@@ -814,34 +814,34 @@ void ImageVector<T>::parallel_for_all_images(const std::function<void (const Ima
 template <typename T>
 void ImageVector<T>::parallel_for_all_pixels(const std::function<void(DataType &)> &f)
 {
-    parallel_for_all_images([&f](ImageScalar<T> &image) { image.parallel_for_all_pixels(f); });
+	parallel_for_all_images([&f](ImageScalar<T> &image) { image.parallel_for_all_pixels(f); });
 }
 
 template <typename T>
 void ImageVector<T>::parallel_for_all_pixels(const std::function<void(DataType &, int, int)> &f)
 {
-    parallel_for_all_images([&f](ImageScalar<T> &image) { image.parallel_for_all_pixels(f); });
+	parallel_for_all_images([&f](ImageScalar<T> &image) { image.parallel_for_all_pixels(f); });
 }
 
 template <typename T>
 void ImageVector<T>::parallel_for_all_pixels(const std::function<void(const DataType &)> &f) const
 {
-    parallel_for_all_images([&f](const ImageScalar<T> &image) { image.parallel_for_all_pixels(f); });
+	parallel_for_all_images([&f](const ImageScalar<T> &image) { image.parallel_for_all_pixels(f); });
 }
 
 template <typename T>
 void ImageVector<T>::parallel_for_all_pixels(const std::function<void(const DataType &, int, int)> &f) const
 {
-    parallel_for_all_images([&f](const ImageScalar<T> &image) { image.parallel_for_all_pixels(f); });
+	parallel_for_all_images([&f](const ImageScalar<T> &image) { image.parallel_for_all_pixels(f); });
 }
 
 template <typename T>
 ImageVector<T> ImageVector<T>::cos(const ImageVector<T> &img)
 {
-    auto c = img;
-    c.parallel_for_all_pixels([](DataType &pix) { pix = std::cos(pix); });
+	auto c = img;
+	c.parallel_for_all_pixels([](DataType &pix) { pix = std::cos(pix); });
 
-    return c;
+	return c;
 }
 
 

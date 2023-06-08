@@ -186,13 +186,13 @@ public:
 	ImageScalar<T> &operator-=(const ImageScalar<T> &other);
 	ImageScalar<T> &operator*=(const ImageScalar<T> &other);
 	ImageScalar<T> &operator/=(const ImageScalar<T> &other);
-    ImageScalar<T> &operator^=(const ImageScalar<T> &kernel);
+	ImageScalar<T> &operator^=(const ImageScalar<T> &kernel);
 
 	ImageScalar<T> operator+(const ImageScalar<T> &other) const;
 	ImageScalar<T> operator-(const ImageScalar<T> &other) const;
 	ImageScalar<T> operator*(const ImageScalar<T> &other) const;
 	ImageScalar<T> operator/(const ImageScalar<T> &other) const;
-    ImageScalar<T> operator^(const ImageScalar<T> &kernel) const;
+	ImageScalar<T> operator^(const ImageScalar<T> &kernel) const;
 
 	//Operators: with a scalar
 	ImageScalar<T> &operator+=(const DataType &s);
@@ -368,39 +368,39 @@ void ImageScalar<T>::set_pixel(int x, int y, DataType value)
 template <typename T>
 void ImageScalar<T>::set_rect(const ImageScalar<T> &subImage, int x, int y)
 {
-    TEXSYN_ASSERT_RECT_IN_BOUNDS(subImage, x, y);
+	TEXSYN_ASSERT_RECT_IN_BOUNDS(subImage, x, y);
 
-    const int hardware_threads = OS::get_singleton()->get_processor_count();
-    const int n_threads = std::min(subImage.get_height(), hardware_threads == 0 ? 8 : hardware_threads);
-    const int block_size = subImage.get_height() / n_threads;
-    const int remaining_size = subImage.get_height() % n_threads;
+	const int hardware_threads = OS::get_singleton()->get_processor_count();
+	const int n_threads = std::min(subImage.get_height(), hardware_threads == 0 ? 8 : hardware_threads);
+	const int block_size = subImage.get_height() / n_threads;
+	const int remaining_size = subImage.get_height() % n_threads;
 
-    std::vector<std::thread> threads(n_threads);
+	std::vector<std::thread> threads(n_threads);
 
-    auto handle_line_block= [&] (const int start, const int size)
-    {
-        ConstIterator r_it = subImage.begin() + start*subImage.get_width();
-        int i;
-        toIFromXY(i, x, y+start);
-        Iterator it = this->begin() + i;
-        Iterator it_end = it + size*this->get_width();
+	auto handle_line_block= [&] (const int start, const int size)
+	{
+		ConstIterator r_it = subImage.begin() + start*subImage.get_width();
+		int i;
+		toIFromXY(i, x, y+start);
+		Iterator it = this->begin() + i;
+		Iterator it_end = it + size*this->get_width();
 
-        for (; it != it_end; it+=static_cast<typename Iterator::difference_type>(get_width() - subImage.get_width()))
-            for (const Iterator it_line_end = it+subImage.get_width(); it != it_line_end; ++it, ++r_it)
-                *it = *r_it;
-    };
+		for (; it != it_end; it+=static_cast<typename Iterator::difference_type>(get_width() - subImage.get_width()))
+			for (const Iterator it_line_end = it+subImage.get_width(); it != it_line_end; ++it, ++r_it)
+				*it = *r_it;
+	};
 
-    int block_start = 0;
-    for (int i = 0; i < n_threads; ++i)
-    {
-        threads[i] = std::thread(handle_line_block, block_start, block_size);
-        block_start += block_size;
-    }
+	int block_start = 0;
+	for (int i = 0; i < n_threads; ++i)
+	{
+		threads[i] = std::thread(handle_line_block, block_start, block_size);
+		block_start += block_size;
+	}
 
-    handle_line_block(block_start, remaining_size);
+	handle_line_block(block_start, remaining_size);
 
-    for (int i = 0; i < n_threads; ++i)
-        threads[i].join();
+	for (int i = 0; i < n_threads; ++i)
+		threads[i].join();
 }
 
 template<typename T>
@@ -411,7 +411,7 @@ void ImageScalar<T>::fromImage(Ref<Image> image)
 	for_all_pixels([&] (DataType &pix, int x, int y)
 	{
 		Color c = image->get_pixel(x, y);
-		pix = DataType(c.get_luminance());
+		pix = DataType(c.r);
 	});
 }
 
@@ -745,28 +745,28 @@ ImageScalar<T> &ImageScalar<T>::operator^=(const ImageScalar<T> &kernel)
 
 	ImageScalar<DataType> tmp(*this);
 	int k_range = kernel.get_width() / 2,
-	    x_max = get_width(),
-	    y_max = get_height();
+	x_max = get_width(),
+	y_max = get_height();
 
-    for_all_pixels
-    (
-        [k_range, kernel, x_max, y_max, tmp](DataType &pix, int x_pix, int y_pix)->void
-        {
-            DataType n_pix = static_cast<DataType>(0), clamped = static_cast<DataType>(0);
-            for (int x=-k_range; x<=k_range; ++x)
-            for (int y=-k_range; y<=k_range; ++y)
-            {
-				clamped = x_pix+x >= 0 && y_pix+y >= 0 && x_pix+x < x_max && y_pix+y < y_max ?
-                          tmp.get_pixel(x_pix + x, y_pix + y) :
-					      pix; // This works for gaussian blur kernel, but what about other convolutions ?
-                n_pix += kernel.get_pixel(x+k_range, y+k_range) * clamped;
-            }
+	for_all_pixels
+	(
+		[k_range, kernel, x_max, y_max, tmp](DataType &pix, int x_pix, int y_pix)->void
+		{
+			DataType n_pix = static_cast<DataType>(0), clamped = static_cast<DataType>(0);
+			for (int x=-k_range; x<=k_range; ++x)
+			for (int y=-k_range; y<=k_range; ++y)
+			{
+				clamped =	x_pix+x >= 0 && y_pix+y >= 0 && x_pix+x < x_max && y_pix+y < y_max ?
+							tmp.get_pixel(x_pix + x, y_pix + y) :
+							pix; // This works for gaussian blur kernel, but what about other convolutions ?
+				n_pix += kernel.get_pixel(x+k_range, y+k_range) * clamped;
+			}
 
 			pix = n_pix;
-        }
-    );
+		}
+	);
 
-    return *this;
+	return *this;
 }
 
 template<typename T>
@@ -830,31 +830,31 @@ ImageScalar<T> ImageScalar<T>::operator^(const ImageScalar<T> &kernel) const
 {
 	TEXSYN_ASSERT_KERNEL_SUITABLE(kernel);
 
-    ImageScalar<T> output;
-    output.init(get_width(), get_height());
-    int k_range = kernel.get_width() / 2,
+	ImageScalar<T> output;
+	output.init(get_width(), get_height());
+	int k_range = kernel.get_width() / 2,
 		x_max = get_width(),
 		y_max = get_height();
 
-    output.for_all_pixels
-    (
-        [k_range, kernel, x_max, y_max, this](DataType &pix, int x_pix, int y_pix)->void
-        {
-            DataType n_pix = static_cast<DataType>(0), clamped = static_cast<DataType>(0);
-            for (int x=-k_range; x<=k_range; ++x)
-            for (int y=-k_range; y<=k_range; ++y)
-            {
-				clamped = x_pix+x >= 0 && y_pix+y >= 0 && x_pix+x < x_max && y_pix+y < y_max ?
-                      get_pixel(x_pix + x, y_pix + y) :
-                      static_cast<DataType>(0);
-                n_pix += kernel.get_pixel(x, y) * clamped;
-            }
+	output.for_all_pixels
+	(
+		[k_range, kernel, x_max, y_max, this](DataType &pix, int x_pix, int y_pix)->void
+		{
+			DataType n_pix = static_cast<DataType>(0), clamped = static_cast<DataType>(0);
+			for (int x=-k_range; x<=k_range; ++x)
+				for (int y=-k_range; y<=k_range; ++y)
+				{
+					clamped = x_pix+x >= 0 && y_pix+y >= 0 && x_pix+x < x_max && y_pix+y < y_max ?
+					get_pixel(x_pix + x, y_pix + y) :
+					static_cast<DataType>(0);
+					n_pix += kernel.get_pixel(x, y) * clamped;
+				}
 
-            pix = n_pix;
-        }
-    );
+			pix = n_pix;
+		}
+	);
 
-    return output;
+	return output;
 }
 
 //Operators: with a scalar
