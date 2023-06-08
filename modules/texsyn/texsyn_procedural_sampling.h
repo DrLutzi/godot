@@ -82,7 +82,7 @@ void ProceduralSampling<T>::weightedMean(ImageType &mean, int width, int height,
 	mean.init(width, height, m_exemplar->get_nbDimensions(), true);
 	SamplerBase::VectorType offsets;
 	m_sampler->generate(offsets, nbSamples);
-	mean.for_all_images([&] (typename ImageType::ImageScalarType &image, int index)
+	mean.parallel_for_all_images([&] (typename ImageType::ImageScalarType &image, int index)
 	{
 		image.for_all_pixels([&] (typename ImageType::DataType &pix, int x, int y)
 		{
