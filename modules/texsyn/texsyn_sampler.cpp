@@ -112,9 +112,8 @@ void SamplerImportance::generate(VectorType &vector, unsigned int nbPoints)
 
 SamplerImportance::Vec2 SamplerImportance::next()
 {
-	static float pdf;
 	Vec2 base(m_rand.randf(), m_rand.randf());
-	return m_distribution2D.sampleContinuous(base, &pdf);
+	return m_distribution2D.sampleContinuous(base);
 }
 
 const SamplerImportance::ImageScalarType &SamplerImportance::importanceFunction() const
@@ -122,8 +121,9 @@ const SamplerImportance::ImageScalarType &SamplerImportance::importanceFunction(
 	return m_importanceFunction;
 }
 
-SamplerImportance::Distribution1D::Distribution1D(const float *f, int n)
-	: m_func(f, f + n), m_cdf(n + 1)
+SamplerImportance::Distribution1D::Distribution1D(const float *f, int n) : 
+	m_func(f, f + n), 
+	m_cdf(n + 1)
 {
 	m_cdf[0] = 0;
 	for (int i = 1; i < n+1; ++i)
@@ -151,7 +151,7 @@ int SamplerImportance::Distribution1D::count() const
 	return m_func.size();
 }
 
-float SamplerImportance::Distribution1D::sampleContinuous(float u, float *pdf, int *off) const
+float SamplerImportance::Distribution1D::sampleContinuous(float u, int *off) const
 {
 	int offset = findInterval(m_cdf.size(), [&](int index)
 	{
@@ -166,66 +166,73 @@ float SamplerImportance::Distribution1D::sampleContinuous(float u, float *pdf, i
 	{
 		du /= (m_cdf[offset+1] - m_cdf[offset]);
 	}
-	if (pdf != nullptr)
-	{
-		*pdf = m_func[offset] / m_funcInt;
-	}
 	return (offset + du) / count();
 }
 
-int SamplerImportance::Distribution1D::sampleDiscrete(float u, float *pdf, float *uRemapped) const
+void SamplerImportance::Distribution2D::init(const float *func, int width, int height)
 {
-	int offset = findInterval(m_cdf.size(), [&](int index)
+	for (int v = 0; v < height; ++v)
 	{
-		return m_cdf[index] <= u;
-	});
-
-	if (pdf != nullptr)
-	{
-		*pdf = m_func[offset] / (m_funcInt * count());
-	}
-	if (uRemapped != nullptr)
-	{
-		*uRemapped = (u - m_cdf[offset]) / (m_cdf[offset+1] - m_cdf[offset]);
-	}
-	return offset;
-}
-
-float SamplerImportance::Distribution1D::discretePDF(int index) const
-{
-	return m_func[index] / (m_funcInt * count());
-}
-
-void SamplerImportance::Distribution2D::init(const float *func, int nu, int nv)
-{
-	for (int v = 0; v < nv; ++v)
-	{
-		m_pConditionalV.emplace_back(new Distribution1D(&func[v*nu], nu));
+		m_pConditionalV.emplace_back(new Distribution1D(&func[v*width], width));
 	}
 	ScalarVectorType marginalFunc;
-	for (int v = 0; v < nv; ++v)
+	for (int v = 0; v < height; ++v)
 	{
 		marginalFunc.push_back(m_pConditionalV[v]->m_funcInt);
 	}
-	m_pMarginal.reset(new Distribution1D(&marginalFunc[0], nv));
+	m_pMarginal.reset(new Distribution1D(&marginalFunc[0], height));
 }
 
-
-SamplerImportance::Vec2 SamplerImportance::Distribution2D::sampleContinuous(const Vec2 &u, float *pdf) const
+SamplerImportance::Vec2 SamplerImportance::Distribution2D::sampleContinuous(const Vec2 &u) const
 {
-	float pdfs[2];
 	int v;
-	float d1 = m_pMarginal->sampleContinuous(u[1], &pdfs[1], &v);
-	float d0 = m_pConditionalV[v]->sampleContinuous(u[0], &pdfs[0]);
-	*pdf = pdfs[0] * pdfs[1];
+	float d1 = m_pMarginal->sampleContinuous(u[1], &v);
+	float d0 = m_pConditionalV[v]->sampleContinuous(u[0]);
 	return Vec2(d0, d1);
 }
 
-float SamplerImportance::Distribution2D::pdf(const Vec2 &p) const
+
+
+SamplerManual::SamplerManual(uint64_t seed) :
+	m_vectorsPool(),
+	m_rand()
 {
-	int iu = CLAMP(int(p[0] * m_pConditionalV[0]->count()), 0, m_pConditionalV[0]->count() - 1);
-	int iv = CLAMP(int(p[1] * m_pMarginal->count()), 0, m_pMarginal->count() - 1);
-	return m_pConditionalV[iv]->m_func[iu] / m_pMarginal->m_funcInt;
+	if(seed != 0)
+	{
+		m_rand.set_seed(seed);
+	}
+	resetVectorsPool();
+}
+
+void SamplerManual::generate(VectorType &vector, unsigned int nbPoints)
+{
+	vector.resize(nbPoints);
+	for(Vec2 &v : vector)
+	{
+		v = next();
+	}
+	return;
+}
+
+typename SamplerManual::Vec2 SamplerManual::next()
+{
+	return m_vectorsPool[m_rand.randi()%m_vectorsPool.size()];
+}
+
+void SamplerManual::setPool(const VectorType& vectorsPool)
+{
+	if(vectorsPool.size()>0)
+		m_vectorsPool = vectorsPool;
+	else
+	{
+		resetVectorsPool();
+	}
+}
+
+void SamplerManual::resetVectorsPool()
+{
+	m_vectorsPool.resize(1);
+	m_vectorsPool[0] = Vec2(0, 0);
 }
 
 }

@@ -183,6 +183,8 @@ typename StatisticsScalar<T>::ImageScalarRef StatisticsScalar<T>::get_autocovari
 			{
 				double xTau = double(x)/(m_imRef.get_width()-1) + ddx;
 				double yTau = double(y)/(m_imRef.get_height()-1) + ddy;
+				xTau = xTau - floor(xTau);
+				yTau = yTau - floor(yTau);
 				cov += (pix - mean)*(m_imRef.get_pixelInterp(xTau, yTau) - mean);
 			});
 			cov /= m_imRef.get_width()*m_imRef.get_height();

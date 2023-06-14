@@ -120,6 +120,8 @@ public:
 	void parallel_for_all_pixels(const std::function<void(const DataType &, int, int)>& f) const;
 
 	static ImageVector<T> cos(const ImageVector<T> &img);
+	
+	bool pixelIsValid(int x, int y) const;
 
 private:
 
@@ -844,6 +846,11 @@ ImageVector<T> ImageVector<T>::cos(const ImageVector<T> &img)
 	return c;
 }
 
+template<typename T>
+bool ImageVector<T>::pixelIsValid(int x, int y) const
+{
+	return x>=0 && x<m_width && y>=0 && y<m_height;
+}
 
 template<typename T>
 void ImageVector<T>::parallel_for_all_images(const std::function<void (SubImageConst)> &f)

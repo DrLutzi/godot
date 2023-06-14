@@ -70,6 +70,8 @@ public:
 
 	const VectorType &get_vector() const;
 	VectorType &get_vector();
+	
+	bool pixelIsValid(int x, int y) const;
 
 	//Iterators
 
@@ -437,6 +439,12 @@ template<typename T>
 const typename ImageScalar<T>::VectorType &ImageScalar<T>::get_vector() const
 {
 	return m_data;
+}
+
+template<typename T>
+bool ImageScalar<T>::pixelIsValid(int x, int y) const
+{
+	return x>=0 && x<m_width && y>=0 && y<m_height;
 }
 
 //Traversal functions

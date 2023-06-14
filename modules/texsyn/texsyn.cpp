@@ -509,7 +509,7 @@ void ProceduralSampling::_bind_methods()
 	BIND_ENUM_CONSTANT(ALPHA);
 	BIND_ENUM_CONSTANT(RIM);
 
-	ClassDB::bind_method(D_METHOD("set_albedo", "component", "image"), &ProceduralSampling::set_component);
+	ClassDB::bind_method(D_METHOD("set_component", "component", "image"), &ProceduralSampling::set_component);
 
 	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToComponent", "component", "image"), &ProceduralSampling::spatiallyVaryingMeanToComponent);
 

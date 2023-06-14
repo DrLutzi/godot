@@ -54,7 +54,6 @@ public:
 class SamplerUniform : public SamplerBase
 {
 public:
-
 	SamplerUniform(uint64_t seed = 0);
 
 	void generate(VectorType &vector, unsigned int nbPoints);
@@ -72,7 +71,6 @@ private:
 class SamplerPeriods : public SamplerBase
 {
 public:
-
 	SamplerPeriods(uint64_t seed = 0);
 
 	void setPeriods(const Vec2 &firstPeriod, const Vec2 &secondPeriod);
@@ -93,7 +91,6 @@ private:
 class SamplerImportance : public SamplerBase
 {
 public:
-
 	using ImageScalarType = ImageScalar<float>;
 	using ImageVectorType = ImageVector<float>;
 	using ScalarVectorType = std::vector<float>;
@@ -116,14 +113,13 @@ private:
 	template <typename Predicate>
 	static int findInterval(int size, const Predicate &pred);
 
-	//Classes heavily inspired from the course of PBRT on importance sampling.
+	//Classes heavily inspired from the course of PBRT on importance sampling: 
+	//https://pbr-book.org/3ed-2018/Monte_Carlo_Integration/2D_Sampling_with_Multidimensional_Transformations
 	struct Distribution1D
 	{
 		Distribution1D(const float *f, int n);
 		int count() const;
-		float sampleContinuous(float u, float *pdf, int *off = nullptr) const;
-		int sampleDiscrete(float u, float *pdf = nullptr, float *uRemapped = nullptr) const;
-		float discretePDF(int index) const;
+		float sampleContinuous(float u, int *off = nullptr) const;
 
 		ScalarVectorType m_func, m_cdf;
 		float m_funcInt;
@@ -136,9 +132,8 @@ private:
 		using PtrDistribution1DVectorType = std::vector<std::unique_ptr<Distribution1D>>;
 
 		Distribution2D() {}
-		void init(const float *func, int nu, int nv);
-		Vec2 sampleContinuous(const Vec2 &u, float *pdf) const;
-		float pdf(const Vec2 &p) const;
+		void init(const float *func, int width, int height);
+		Vec2 sampleContinuous(const Vec2 &u) const;
 
 	private:
 		PtrDistribution1DVectorType m_pConditionalV;
@@ -170,6 +165,39 @@ int SamplerImportance::findInterval(int size, const Predicate &pred)
 	}
 	return CLAMP(first - 1, 0, size - 2);
 }
+
+/**
+ * @brief The SamplerManual class is an override of SamplerBase,
+ * supposed to yield an array of points chosen at random in a pre-computed array of points.
+ */
+class SamplerManual : SamplerBase
+{
+public:
+	SamplerManual(uint64_t seed = 0);
+	
+	void generate(VectorType &vector, unsigned int nbPoints);
+	Vec2 next();
+	
+	void setPool(const VectorType& vectorsPool);
+	
+private:
+	
+	VectorType m_vectorsPool;
+	RandomNumberGenerator m_rand;
+	
+	void resetVectorsPool();
+};
+
+class SamplerVarying
+{
+public:
+	using MapType=HashMap<int, SamplerBase*>;
+	
+	SamplerVarying();
+	
+private:
+	MapType m_map;
+};
 
 } //namespace Stamping
 
