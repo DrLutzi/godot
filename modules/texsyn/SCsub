@@ -6,7 +6,9 @@ Import("env_modules")
 sources = [
 	"register_types.cpp",
 	"texsyn.cpp",
-	"texsyn_sampler.cpp"
+	"texsyn_sampler.cpp",
+    "wasserstein.cpp",
+    "colorsynthesisprototype.cpp"
 ]
 
 env_texsyn = env_modules.Clone()

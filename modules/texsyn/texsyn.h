@@ -110,6 +110,8 @@ public:
 	void samplerRealizationToImage(Ref<Image> image, unsigned int size);
 
 	void centerExemplar(Ref<Image> exemplar, Ref<Image> mean);
+	
+	void test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> debugResult, Ref<Image> debugDataRef);
 
 protected:
 	static void _bind_methods();

@@ -1,6 +1,7 @@
 #include "core/object/class_db.h"
 #include "image_pyramid.h"
 #include "texsyn.h"
+#include "colorsynthesisprototype.h"
 
 void TexSyn::GaussianPyr::_bind_methods()
 {
@@ -23,10 +24,10 @@ void TexSyn::RieszPyr::_bind_methods()
 
 	ClassDB::bind_method(D_METHOD("init", "image", "depth"), &RieszPyr::init);
 	ClassDB::bind_method(D_METHOD("get_layer", "depth", "type"), &RieszPyr::get_layer);
-    ClassDB::bind_method(D_METHOD("pack_in_texture", "type"), &RieszPyr::pack_in_texture);
-    ClassDB::bind_method(D_METHOD("phases_congruency", "alpha", "beta", "type"), &RieszPyr::phase_congruency);
-    ClassDB::bind_method(D_METHOD("reconstruct"), &RieszPyr::reconstruct);
-    ClassDB::bind_method(D_METHOD("test", "image", "subImage"), &RieszPyr::test);
+	ClassDB::bind_method(D_METHOD("pack_in_texture", "type"), &RieszPyr::pack_in_texture);
+	ClassDB::bind_method(D_METHOD("phases_congruency", "alpha", "beta", "type"), &RieszPyr::phase_congruency);
+	ClassDB::bind_method(D_METHOD("reconstruct"), &RieszPyr::reconstruct);
+	ClassDB::bind_method(D_METHOD("test", "image", "subImage"), &RieszPyr::test);
 }
 
 #ifdef TEXSYN_TESTS
@@ -497,6 +498,80 @@ void ProceduralSampling::centerExemplar(Ref<Image> exemplar, Ref<Image> mean)
 	return;
 }
 
+void ProceduralSampling::test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef)
+{
+	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
+	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
+	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
+	ERR_FAIL_COND_MSG(regions->is_empty(), "regions must not be empty.");
+	ERR_FAIL_COND_MSG(fgbgmap.is_null(), "fgbgmap must not be null.");
+	ERR_FAIL_COND_MSG(fgbgmap->is_empty(), "fgbgmap must not be empty.");
+	ERR_FAIL_COND_MSG(resultRef.is_null(), "debugResult must not be null.");
+	ERR_FAIL_COND_MSG(!resultRef->is_empty(), "fgbgmap must be empty.");
+	
+	//creating the id map with integers from regions
+	using ImageRegionType = TexSyn::ImageScalar<int>;
+	using MapType = HashMap<Color, int>;
+	ImageRegionType regionsInt;
+	MapType histogramRegions;
+	regionsInt.init(exemplar->get_width(), exemplar->get_height());
+	int id = 1;
+	regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
+	{
+		Color c = regions->get_pixel(x, y);
+		if(c.is_equal_approx(Color(1, 1, 1)))
+		{
+			pix = 0;
+		}
+		else
+		{
+			MapType::Iterator it = histogramRegions.find(c);
+			if(it != histogramRegions.end())
+			{
+				pix = it->value;
+			}
+			else
+			{
+				MapType::Iterator it2 = histogramRegions.insert(c, id);
+				++id;
+				pix = it2->value;
+			}
+		}
+	});
+	
+	TexSyn::ColorSynthesisPrototype csp;
+	
+	TexSyn::ImageVector<double> exemplarIV;
+	exemplarIV.fromImage(exemplar);
+	csp.setExemplar(exemplarIV);
+	
+	TexSyn::ImageScalar<double> fgbgmapIV;
+	fgbgmapIV.fromImage(fgbgmap);
+	csp.setFGBGMap(fgbgmapIV);
+	
+	csp.setForegroundRegionMap(regionsInt);
+	
+	csp.computeMeans();
+	csp.computeForegroundCovarianceMatrix();
+	csp.initNormalMultivariateDistribution();
+	
+	Ref<Image> tmpResultRef;
+	tmpResultRef = Image::create_empty(exemplar->get_width(), exemplar->get_height(), false, Image::FORMAT_RGF);
+	TexSyn::ImageVector<double> result = csp.createFullTexture();
+	result.toImageIndexed(tmpResultRef, 0);
+	resultRef->copy_from(tmpResultRef);
+	
+	if(!debugDataRef.is_null())
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(exemplar->get_width(), exemplar->get_height(), false, Image::FORMAT_RGF);
+		TexSyn::ImageVector<double> localMeans = csp.getLocalMeans();
+		localMeans.toImageIndexed(tmpResultRef, 0);
+		debugDataRef->copy_from(tmpResultRef);
+	}
+	return;
+}
+
 void ProceduralSampling::_bind_methods()
 {
 	BIND_ENUM_CONSTANT(ALBEDO);
@@ -521,6 +596,8 @@ void ProceduralSampling::_bind_methods()
 	ClassDB::bind_method(D_METHOD("centerExemplar", "exemplar", "mean"), &ProceduralSampling::centerExemplar);
 	ClassDB::bind_method(D_METHOD("computeAutocovarianceSampler"), &ProceduralSampling::computeAutocovarianceSampler);
 	ClassDB::bind_method(D_METHOD("samplerPdfToImage", "image"), &ProceduralSampling::samplerPdfToImage);
+	
+	ClassDB::bind_method(D_METHOD("test_colorSynthesisPrototype", "exemplar", "regions", "fgbgmap", "result"), &ProceduralSampling::test_colorSynthesisPrototype);
 }
 
 void ProceduralSampling::computeImageVector()
