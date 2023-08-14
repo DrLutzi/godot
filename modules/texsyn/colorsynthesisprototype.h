@@ -5,6 +5,7 @@
 #include "image_vector.h"
 #include "eigen/Eigen/Core"
 #include "eigen/Eigen/Dense"
+#include "gaussian_transfer.h"
 
 namespace TexSyn
 {
@@ -51,6 +52,7 @@ private:
 	Eigen::VectorXd m_meanForeground;				///<mean foreground
 	RandomNumberGenerator m_rand;
 	Eigen::MatrixXd m_multivariateTransform;
+	GaussianTransfer m_gaussianTransfer;
 };
 
 }

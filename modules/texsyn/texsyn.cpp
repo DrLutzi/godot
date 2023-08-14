@@ -1,7 +1,10 @@
 #include "core/object/class_db.h"
 #include "image_pyramid.h"
+#include "scene/resources/texture.h"
 #include "texsyn.h"
 #include "colorsynthesisprototype.h"
+#include "gaussian_transfer.h"
+#include "texsyn_pca.h"
 
 void TexSyn::GaussianPyr::_bind_methods()
 {
@@ -556,7 +559,7 @@ void ProceduralSampling::test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<I
 	csp.initNormalMultivariateDistribution();
 	
 	Ref<Image> tmpResultRef;
-	tmpResultRef = Image::create_empty(exemplar->get_width(), exemplar->get_height(), false, Image::FORMAT_RGF);
+	tmpResultRef = Image::create_empty(exemplar->get_width(), exemplar->get_height(), false, Image::FORMAT_RGBF);
 	TexSyn::ImageVector<double> result = csp.createFullTexture();
 	result.toImageIndexed(tmpResultRef, 0);
 	resultRef->copy_from(tmpResultRef);
@@ -564,7 +567,7 @@ void ProceduralSampling::test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<I
 	if(!debugDataRef.is_null())
 	{
 		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(exemplar->get_width(), exemplar->get_height(), false, Image::FORMAT_RGF);
+		tmpResultRef = Image::create_empty(exemplar->get_width(), exemplar->get_height(), false, Image::FORMAT_RGBF);
 		TexSyn::ImageVector<double> localMeans = csp.getLocalMeans();
 		localMeans.toImageIndexed(tmpResultRef, 0);
 		debugDataRef->copy_from(tmpResultRef);
@@ -572,32 +575,322 @@ void ProceduralSampling::test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<I
 	return;
 }
 
-void ProceduralSampling::_bind_methods()
+void ProceduralSampling::test_colorSynthesisPrototype2(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef)
 {
-	BIND_ENUM_CONSTANT(ALBEDO);
-	BIND_ENUM_CONSTANT(NORMAL);
-	BIND_ENUM_CONSTANT(HEIGHT);
-	BIND_ENUM_CONSTANT(ROUGHNESS);
-	BIND_ENUM_CONSTANT(METALLIC);
-	BIND_ENUM_CONSTANT(AMBIENT_OCCLUSION);
-	BIND_ENUM_CONSTANT(SPECULAR);
-	BIND_ENUM_CONSTANT(ALPHA);
-	BIND_ENUM_CONSTANT(RIM);
-
-	ClassDB::bind_method(D_METHOD("set_component", "component", "image"), &ProceduralSampling::set_component);
-
-	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToComponent", "component", "image"), &ProceduralSampling::spatiallyVaryingMeanToComponent);
-
-	ClassDB::bind_method(D_METHOD("set_cyclostationaryPeriods", "t0", "t1"), &ProceduralSampling::set_cyclostationaryPeriods);
-	ClassDB::bind_method(D_METHOD("set_importancePDF", "image"), &ProceduralSampling::set_importancePDF);
-	ClassDB::bind_method(D_METHOD("set_meanAccuracy", "accuracy"), &ProceduralSampling::set_meanAccuracy);
-	ClassDB::bind_method(D_METHOD("set_meanSize", "size"), &ProceduralSampling::set_meanSize);
-	ClassDB::bind_method(D_METHOD("samplerRealizationToImage", "image", "size"), &ProceduralSampling::samplerRealizationToImage, DEFVAL(4096));
-	ClassDB::bind_method(D_METHOD("centerExemplar", "exemplar", "mean"), &ProceduralSampling::centerExemplar);
-	ClassDB::bind_method(D_METHOD("computeAutocovarianceSampler"), &ProceduralSampling::computeAutocovarianceSampler);
-	ClassDB::bind_method(D_METHOD("samplerPdfToImage", "image"), &ProceduralSampling::samplerPdfToImage);
+	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
+	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
+	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
+	ERR_FAIL_COND_MSG(regions->is_empty(), "regions must not be empty.");
+	ERR_FAIL_COND_MSG(fgbgmap.is_null(), "fgbgmap must not be null.");
+	ERR_FAIL_COND_MSG(fgbgmap->is_empty(), "fgbgmap must not be empty.");
+	ERR_FAIL_COND_MSG(resultRef.is_null(), "debugResult must not be null.");
+	ERR_FAIL_COND_MSG(!resultRef->is_empty(), "fgbgmap must be empty.");
 	
-	ClassDB::bind_method(D_METHOD("test_colorSynthesisPrototype", "exemplar", "regions", "fgbgmap", "result"), &ProceduralSampling::test_colorSynthesisPrototype);
+	//creating the id map with integers from regions
+	using ImageRegionType = TexSyn::ImageScalar<int>;
+	using MapType = HashMap<Color, int>;
+	ImageRegionType regionsInt;
+	MapType histogramRegions;
+	regionsInt.init(exemplar->get_width(), exemplar->get_height(), true);
+	int id = 1;
+	regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
+	{
+		Color c = regions->get_pixel(x, y);
+		if(c.is_equal_approx(Color(1, 1, 1)))
+		{
+			pix = 0;
+		}
+		else
+		{
+			MapType::Iterator it = histogramRegions.find(c);
+			if(it != histogramRegions.end())
+			{
+				pix = it->value;
+			}
+			else
+			{
+				MapType::Iterator it2 = histogramRegions.insert(c, id);
+				++id;
+				pix = it2->value;
+			}
+		}
+	});
+	
+	TexSyn::ColorSynthesisPrototype csp;
+	TexSyn::GaussianTransfer gst;
+
+	TexSyn::ImageVector<double> exemplarIV;
+	exemplarIV.fromImage(exemplar);
+	csp.setExemplar(exemplarIV);
+	
+	TexSyn::ImageVector<double> Tinv;
+	TexSyn::ImageVector<double> TG;
+	Tinv.init(128, id, exemplarIV.get_nbDimensions(), true);
+	TG.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
+	gst.computeTinputRegions(exemplarIV, regionsInt, TG, false, false);
+	gst.computeinvTRegions(exemplarIV, regionsInt, Tinv, false);
+	//TexSyn::GaussianTransfer::invTMultipleRegions(exemplarIV, Tinv, regionsInt);
+	
+	RandomNumberGenerator rng;
+	
+	Ref<Image> tmpResultRef;
+	tmpResultRef = Image::create_empty(exemplarIV.get_width(), exemplarIV.get_height(), false, Image::FORMAT_RGBF);
+	TexSyn::ImageVector<double> result;
+	result.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
+	result.get_image(0).for_all_pixels([&] (TexSyn::ImageVector<double>::DataType &pix, int x, int y)
+	{
+		int region = regionsInt.get_pixel(x, y);
+		if(region != 0)
+		{
+			TexSyn::ImageVector<double>::VectorType p = TG.get_pixel(x, y);
+			rng.set_seed(region);
+			int regionSubstitute = rng.randi_range(1, id-1);
+			gst.invTRegions(p, Tinv, regionSubstitute);
+			result.set_pixel(x, y, p);
+		}
+		else
+		{
+			TexSyn::ImageVector<double>::VectorType p = TG.get_pixel(x, y);
+			gst.invTRegions(p, Tinv, 0);
+			result.set_pixel(x, y, p);
+		}
+	});
+
+//	result.get_image(0).for_all_pixels([&] (TexSyn::ImageVector<double>::DataType &pix, int x, int y)
+//	{
+//		int region = regionsInt.get_pixel(x, y);
+//		if(region != 0 || region == 0)
+//		{
+//			TexSyn::ImageVector<double>::VectorType p = TG.get_pixel(x, y);
+//			gst.invTMultipleRegions(p, Tinv, region);
+//			result.set_pixel(x, y, p);
+//		}
+//	});
+	
+	result.toImageIndexed(tmpResultRef, 0);
+	resultRef->copy_from(tmpResultRef);
+	
+	if(!debugDataRef.is_null())
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(TG.get_width(), TG.get_height(), false, Image::FORMAT_RGBF);
+		TG.toImageIndexed(tmpResultRef, 0);
+		debugDataRef->copy_from(tmpResultRef);
+	}
+	return;
+}
+
+void ProceduralSampling::test_colorSynthesisPrototype3(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef)
+{
+	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
+	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
+	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
+	ERR_FAIL_COND_MSG(regions->is_empty(), "regions must not be empty.");
+	ERR_FAIL_COND_MSG(fgbgmap.is_null(), "fgbgmap must not be null.");
+	ERR_FAIL_COND_MSG(fgbgmap->is_empty(), "fgbgmap must not be empty.");
+	ERR_FAIL_COND_MSG(resultRef.is_null(), "debugResult must not be null.");
+	ERR_FAIL_COND_MSG(!resultRef->is_empty(), "fgbgmap must be empty.");
+
+	//creating the id map with integers from regions
+	using ImageRegionType = TexSyn::ImageScalar<int>;
+
+	TexSyn::GaussianTransfer gst;
+
+	TexSyn::ImageVector<double> exemplarIV;
+	exemplarIV.fromImage(exemplar);
+
+	TexSyn::ImageVector<double> TG;
+	TexSyn::ImageVector<double> Tinv;
+	Tinv.init(128, 1, exemplarIV.get_nbDimensions(), true);
+	TG.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
+	gst.computeTinput(exemplarIV, TG);
+	gst.computeinvT(exemplarIV, Tinv);
+
+	Ref<Image> tmpResultRef;
+	tmpResultRef = Image::create_empty(exemplarIV.get_width(), exemplarIV.get_height(), false, Image::FORMAT_RGBF);
+	TexSyn::ImageVector<double> result;
+	//result.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
+	result = gst.invT(TG, Tinv);
+//	result.get_image(0).for_all_pixels([&] (TexSyn::ImageVector<double>::DataType &pix, int x, int y)
+//	{
+//		TexSyn::ImageVector<double>::VectorType p = TG.get_pixel(x, y);
+//		gst.invT(p, Tinv);
+//		result.set_pixel(x, y, p);
+//	});
+
+	result.toImageIndexed(tmpResultRef, 0);
+	resultRef->copy_from(tmpResultRef);
+
+	if(!debugDataRef.is_null())
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(TG.get_width(), TG.get_height(), false, Image::FORMAT_RGBF);
+		TG.toImageIndexed(tmpResultRef, 0);
+		debugDataRef->copy_from(tmpResultRef);
+	}
+	return;
+}
+
+void ProceduralSampling::precomputeLocallyStationary(	Ref<Image> exemplar, Ref<Image> regions, Ref<Image> gaussianOutputRef, 
+														Ref<Image> invTRef, Ref<Image> regionsOutputRef, Ref<Image> originsRef, 
+														Ref<ImageTexture3D> invTFilteredRef)
+{
+	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
+	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
+	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
+	ERR_FAIL_COND_MSG(regions->is_empty(), "regions must not be empty.");
+	ERR_FAIL_COND_MSG(gaussianOutputRef.is_null(), "debugResult must not be null.");
+	ERR_FAIL_COND_MSG(!gaussianOutputRef->is_empty(), "fgbgmap must be empty.");
+	
+	//creating the id map with integers from regions
+	using ImageRegionType = TexSyn::ImageScalar<int>;
+	using MapType = HashMap<Color, int>;
+	ImageRegionType regionsInt;
+	MapType histogramRegions;
+	regionsInt.init(exemplar->get_width(), exemplar->get_height(), true);
+	int id = 1;
+	regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
+	{
+		Color c = regions->get_pixel(x, y);
+		if(c.is_equal_approx(Color(1, 1, 1)))
+		{
+			pix = 0;
+		}
+		else
+		{
+			MapType::Iterator it = histogramRegions.find(c);
+			if(it != histogramRegions.end())
+			{
+				pix = it->value;
+			}
+			else
+			{
+				MapType::Iterator it2 = histogramRegions.insert(c, id);
+				++id;
+				pix = it2->value;
+			}
+		}
+	});
+	
+	
+	//Constructing the origins of each region for seeding in the shader
+	TexSyn::ImageVector<float> imageOrigins;
+	imageOrigins.init(id, 1, 2);
+	for(int otherID=0; otherID<id; ++otherID)
+	{
+		float dx = 0.0, dy = 0.0;
+		int maxX=0, maxY=0, minX=regionsInt.get_width()-1, minY=regionsInt.get_height()-1;
+		regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
+		{
+//			dx = double(x)/(regionsInt.get_width()-1);
+//			dy = double(y)/(regionsInt.get_height()-1);
+			if(pix == otherID)
+			{
+				maxX = std::max(maxX, x);
+				maxY = std::max(maxY, y);
+				minX = std::min(minX, x);
+				minY = std::min(minY, y);
+			}
+		});
+		if(maxX == regionsInt.get_width()-1 && minX == 0)
+		{
+			dx = 0.5;
+		}
+		if(maxY == regionsInt.get_width()-1 && minY == 0)
+		{
+			dy = 0.5;
+		}
+		imageOrigins.set_pixel(otherID, 0, 0, dx);
+		imageOrigins.set_pixel(otherID, 0, 1, dy);
+	}
+	
+	
+	TexSyn::ColorSynthesisPrototype csp;
+	TexSyn::GaussianTransfer gst;
+
+	TexSyn::ImageVector<double> exemplarIV;
+	exemplarIV.fromImage(exemplar);
+	csp.setExemplar(exemplarIV);
+	
+	TexSyn::ImageVector<double> TG;
+	TG.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
+	gst.computeTinputRegions(exemplarIV, regionsInt, TG, false, false);
+	
+	//computing the filtered LUT
+	TexSyn::MipmapMultiIDMap mipmapMultiIDMap;
+	TexSyn::MipmapMultiIDMap::ImageMultiIDMapType multiIdMap;
+	gst.toMultipleRegions(multiIdMap, regionsInt);
+	mipmapMultiIDMap.setIDMap(multiIdMap);
+	mipmapMultiIDMap.computeMipmap();
+	mipmapMultiIDMap.upsizeMipmap();
+	
+	TexSyn::Mipmap mipmapExemplar;
+	mipmapExemplar.setTexture(exemplarIV);
+	mipmapExemplar.computeMipmap();
+	mipmapExemplar.upsizeMipmap();
+	
+	TexSyn::ImageVector<double> Tinv;
+	Tinv.init(128, id, TG.get_nbDimensions(), true);
+	gst.computeinvTRegions(exemplarIV, regionsInt, Tinv);
+	
+	//Computing the pre-filtered LUTs
+	LocalVector<TexSyn::ImageVector<double>> TinvVector;
+	
+	Vector<Ref<Image>> TinvVectorRef;
+	TinvVectorRef.resize(mipmapMultiIDMap.nbMaps());
+	
+	for(int i=0; i<mipmapMultiIDMap.nbMaps(); ++i)
+	{
+		TexSyn::ImageVector<double> Tinv;
+		Tinv.init(128, id, mipmapExemplar.mipmap(i).get_nbDimensions(), true);
+		gst.computeinvTMultipleRegions(mipmapExemplar.mipmap(i), mipmapMultiIDMap.mipmap(i), Tinv, false);
+		TinvVector.push_back(Tinv);
+		Ref<Image> tmpResultRef = Image::create_empty(Tinv.get_width(), Tinv.get_height(), false, Image::FORMAT_RGBF);
+		Tinv.toImageIndexed(tmpResultRef, 0);
+		TinvVectorRef.write[i].instantiate();
+		TinvVectorRef.write[i]->copy_from(tmpResultRef);
+		TinvVectorRef.write[i]->save_png(String("invTRef_num.png").replace("num", String::num_int64(i)));
+	}
+	
+	invTFilteredRef->create(Image::FORMAT_RGBF, Tinv.get_width(), Tinv.get_height(), TinvVector.size(), false, TinvVectorRef);
+	
+	TexSyn::ImageScalar<double> regionsOutput;
+	regionsOutput.init(regions->get_width(), regions->get_height(), true);
+	regionsOutput.for_all_pixels([&] (double & pix, int x, int y)
+	{
+		int region = regionsInt.get_pixel(x, y);
+		pix = float(region)/(id-1);
+	});
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(Tinv.get_width(), Tinv.get_height(), false, Image::FORMAT_RGBF);
+		Tinv.toImageIndexed(tmpResultRef, 0);
+		invTRef->copy_from(tmpResultRef);
+	}
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(TG.get_width(), TG.get_height(), false, Image::FORMAT_RGBF);
+		TG.toImageIndexed(tmpResultRef, 0);
+		gaussianOutputRef->copy_from(tmpResultRef);
+	}
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(regionsOutput.get_width(), regionsOutput.get_height(), false, Image::FORMAT_RF);
+		regionsOutput.toImage(tmpResultRef, 0);
+		regionsOutputRef->copy_from(tmpResultRef);
+	}
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(imageOrigins.get_width(), imageOrigins.get_height(), false, Image::FORMAT_RGF);
+		imageOrigins.toImageIndexed(tmpResultRef, 0);
+		originsRef->copy_from(tmpResultRef);
+	}
+	
+	return;
 }
 
 void ProceduralSampling::computeImageVector()
@@ -651,6 +944,38 @@ void ProceduralSampling::computeImageVector()
 	fillTexture(RIM, 1);
 
 	return;
+}
+
+void ProceduralSampling::_bind_methods()
+{
+	BIND_ENUM_CONSTANT(ALBEDO);
+	BIND_ENUM_CONSTANT(NORMAL);
+	BIND_ENUM_CONSTANT(HEIGHT);
+	BIND_ENUM_CONSTANT(ROUGHNESS);
+	BIND_ENUM_CONSTANT(METALLIC);
+	BIND_ENUM_CONSTANT(AMBIENT_OCCLUSION);
+	BIND_ENUM_CONSTANT(SPECULAR);
+	BIND_ENUM_CONSTANT(ALPHA);
+	BIND_ENUM_CONSTANT(RIM);
+
+	ClassDB::bind_method(D_METHOD("set_component", "component", "image"), &ProceduralSampling::set_component);
+
+	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToComponent", "component", "image"), &ProceduralSampling::spatiallyVaryingMeanToComponent);
+
+	ClassDB::bind_method(D_METHOD("set_cyclostationaryPeriods", "t0", "t1"), &ProceduralSampling::set_cyclostationaryPeriods);
+	ClassDB::bind_method(D_METHOD("set_importancePDF", "image"), &ProceduralSampling::set_importancePDF);
+	ClassDB::bind_method(D_METHOD("set_meanAccuracy", "accuracy"), &ProceduralSampling::set_meanAccuracy);
+	ClassDB::bind_method(D_METHOD("set_meanSize", "size"), &ProceduralSampling::set_meanSize);
+	ClassDB::bind_method(D_METHOD("samplerRealizationToImage", "image", "size"), &ProceduralSampling::samplerRealizationToImage, DEFVAL(4096));
+	ClassDB::bind_method(D_METHOD("centerExemplar", "exemplar", "mean"), &ProceduralSampling::centerExemplar);
+	ClassDB::bind_method(D_METHOD("computeAutocovarianceSampler"), &ProceduralSampling::computeAutocovarianceSampler);
+	ClassDB::bind_method(D_METHOD("samplerPdfToImage", "image"), &ProceduralSampling::samplerPdfToImage);
+	
+	ClassDB::bind_method(D_METHOD("test_colorSynthesisPrototype", "exemplar", "regions", "fgbgmap", "result", "debug"), &ProceduralSampling::test_colorSynthesisPrototype);
+	ClassDB::bind_method(D_METHOD("test_colorSynthesisPrototype2", "exemplar", "regions", "fgbgmap", "result", "debug"), &ProceduralSampling::test_colorSynthesisPrototype2);
+	ClassDB::bind_method(D_METHOD("test_colorSynthesisPrototype3", "exemplar", "regions", "fgbgmap", "result", "debug"), &ProceduralSampling::test_colorSynthesisPrototype3);
+	
+	ClassDB::bind_method(D_METHOD("precomputeLocallyStationary", "exemplar", "regions", "gaussianOutput", "invT", "regionsOutput"), &ProceduralSampling::precomputeLocallyStationary);
 }
 
 #endif //ifdef TEXSYN_TESTS

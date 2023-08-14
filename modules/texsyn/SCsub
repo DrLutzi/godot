@@ -8,7 +8,9 @@ sources = [
 	"texsyn.cpp",
 	"texsyn_sampler.cpp",
     "wasserstein.cpp",
-    "colorsynthesisprototype.cpp"
+    "colorsynthesisprototype.cpp",
+    "gaussian_transfer.cpp",
+    "mipmap_id.cpp"
 ]
 
 env_texsyn = env_modules.Clone()

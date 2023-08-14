@@ -259,7 +259,7 @@ void ImageScalar<T>::init(unsigned int width, unsigned int height, bool initToZe
 	{
 		parallel_for_all_pixels([&] (DataType &pix)
 		{
-			pix = DataType(0);
+			pix = DataType{};
 		});
 	}
 }

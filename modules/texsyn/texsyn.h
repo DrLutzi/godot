@@ -6,6 +6,7 @@
 #include "texsyn_pca.h"
 #include "texsyn_statistics.h"
 #include "texsyn_procedural_sampling.h"
+#include "scene/resources/texture.h"
 
 constexpr std::uint32_t texsyn_log2(std::uint32_t n) noexcept
 {
@@ -111,8 +112,12 @@ public:
 
 	void centerExemplar(Ref<Image> exemplar, Ref<Image> mean);
 	
-	void test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> debugResult, Ref<Image> debugDataRef);
-
+	void test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
+	void test_colorSynthesisPrototype2(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
+	void test_colorSynthesisPrototype3(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
+	void precomputeLocallyStationary(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> gaussianOutputRef, 
+										Ref<Image> invTRef, Ref<Image> regionsOutputRef, Ref<Image> originsRef, Ref<ImageTexture3D> invTFilteredRef);
+	
 protected:
 	static void _bind_methods();
 

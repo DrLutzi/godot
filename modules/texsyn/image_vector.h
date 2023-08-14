@@ -249,7 +249,7 @@ typename ImageVector<T>::VectorType ImageVector<T>::get_pixel(int x, int y) cons
 	v.resize(get_nbDimensions());
 	for(unsigned int d=0; d<get_nbDimensions(); ++d)
 	{
-		v[d]=get_pixel(x, y, d);
+		v.write[d]=get_pixel(x, y, d);
 	}
 	return v;
 }
