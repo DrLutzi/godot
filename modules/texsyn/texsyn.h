@@ -6,7 +6,7 @@
 #include "texsyn_pca.h"
 #include "texsyn_statistics.h"
 #include "texsyn_procedural_sampling.h"
-#include "scene/resources/texture.h"
+#include "scene/resources/image_texture.h"
 
 constexpr std::uint32_t texsyn_log2(std::uint32_t n) noexcept
 {
