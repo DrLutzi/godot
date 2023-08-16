@@ -40,6 +40,7 @@
 #include "core/string/string_name.h"
 #include "core/templates/pair.h"
 #include "scene/resources/audio_stream_wav.h"
+#include "scene/scene_string_names.h"
 #include "servers/audio/audio_driver_dummy.h"
 #include "servers/audio/effects/audio_effect_compressor.h"
 
@@ -113,6 +114,20 @@ void AudioDriver::input_buffer_write(int32_t sample) {
 	} else {
 		WARN_PRINT("input_buffer_write: Invalid input_position=" + itos(input_position) + " input_buffer.size()=" + itos(input_buffer.size()));
 	}
+}
+
+int AudioDriver::_get_configured_mix_rate() {
+	StringName audio_driver_setting = "audio/driver/mix_rate";
+	int mix_rate = GLOBAL_GET(audio_driver_setting);
+
+	// In the case of invalid mix rate, let's default to a sensible value..
+	if (mix_rate <= 0) {
+		WARN_PRINT(vformat("Invalid mix rate of %d, consider reassigning setting \'%s\'. \nDefaulting mix rate to value %d.",
+				mix_rate, audio_driver_setting, AudioDriverManager::DEFAULT_MIX_RATE));
+		mix_rate = AudioDriverManager::DEFAULT_MIX_RATE;
+	}
+
+	return mix_rate;
 }
 
 AudioDriver::SpeakerMode AudioDriver::get_speaker_mode_by_total_channels(int p_channels) const {
@@ -733,7 +748,7 @@ void AudioServer::set_bus_count(int p_count) {
 		buses[i]->bypass = false;
 		buses[i]->volume_db = 0;
 		if (i > 0) {
-			buses[i]->send = "Master";
+			buses[i]->send = SceneStringNames::get_singleton()->Master;
 		}
 
 		bus_map[attempt] = buses[i];
@@ -1568,7 +1583,7 @@ void AudioServer::set_bus_layout(const Ref<AudioBusLayout> &p_bus_layout) {
 	for (int i = 0; i < p_bus_layout->buses.size(); i++) {
 		Bus *bus = memnew(Bus);
 		if (i == 0) {
-			bus->name = "Master";
+			bus->name = SceneStringNames::get_singleton()->Master;
 		} else {
 			bus->name = p_bus_layout->buses[i].name;
 			bus->send = p_bus_layout->buses[i].send;
@@ -1877,5 +1892,5 @@ void AudioBusLayout::_get_property_list(List<PropertyInfo> *p_list) const {
 
 AudioBusLayout::AudioBusLayout() {
 	buses.resize(1);
-	buses.write[0].name = "Master";
+	buses.write[0].name = SceneStringNames::get_singleton()->Master;
 }

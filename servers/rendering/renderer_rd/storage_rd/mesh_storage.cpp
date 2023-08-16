@@ -627,7 +627,7 @@ AABB MeshStorage::mesh_get_aabb(RID p_mesh, RID p_skeleton) {
 
 			if (skeleton->use_2d) {
 				for (int j = 0; j < bs; j++) {
-					if (skbones[0].size == Vector3()) {
+					if (skbones[j].size == Vector3(-1, -1, -1)) {
 						continue; //bone is unused
 					}
 
@@ -654,7 +654,7 @@ AABB MeshStorage::mesh_get_aabb(RID p_mesh, RID p_skeleton) {
 				}
 			} else {
 				for (int j = 0; j < bs; j++) {
-					if (skbones[0].size == Vector3()) {
+					if (skbones[j].size == Vector3(-1, -1, -1)) {
 						continue; //bone is unused
 					}
 
@@ -727,6 +727,12 @@ void MeshStorage::mesh_set_shadow_mesh(RID p_mesh, RID p_shadow_mesh) {
 void MeshStorage::mesh_clear(RID p_mesh) {
 	Mesh *mesh = mesh_owner.get_or_null(p_mesh);
 	ERR_FAIL_COND(!mesh);
+
+	// Clear instance data before mesh data.
+	for (MeshInstance *mi : mesh->instances) {
+		_mesh_instance_clear(mi);
+	}
+
 	for (uint32_t i = 0; i < mesh->surface_count; i++) {
 		Mesh::Surface &s = *mesh->surfaces[i];
 		if (s.vertex_buffer.is_valid()) {
@@ -766,10 +772,6 @@ void MeshStorage::mesh_clear(RID p_mesh) {
 	mesh->surfaces = nullptr;
 	mesh->surface_count = 0;
 	mesh->material_cache.clear();
-	//clear instance data
-	for (MeshInstance *mi : mesh->instances) {
-		_mesh_instance_clear(mi);
-	}
 	mesh->has_bone_weights = false;
 	mesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MESH);
 
@@ -860,6 +862,7 @@ void MeshStorage::_mesh_instance_clear(MeshInstance *mi) {
 
 	if (mi->blend_weights_buffer.is_valid()) {
 		RD::get_singleton()->free(mi->blend_weights_buffer);
+		mi->blend_weights_buffer = RID();
 	}
 	mi->blend_weights.clear();
 	mi->weights_dirty = false;
@@ -1286,12 +1289,9 @@ void MeshStorage::multimesh_allocate_data(RID p_multimesh, int p_instances, RS::
 	multimesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MULTIMESH);
 }
 
-bool MeshStorage::_multimesh_enable_motion_vectors(RID p_multimesh) {
-	MultiMesh *multimesh = multimesh_owner.get_or_null(p_multimesh);
-	ERR_FAIL_COND_V(!multimesh, false);
-
+void MeshStorage::_multimesh_enable_motion_vectors(MultiMesh *multimesh) {
 	if (multimesh->motion_vectors_enabled) {
-		return false;
+		return;
 	}
 
 	multimesh->motion_vectors_enabled = true;
@@ -1304,22 +1304,30 @@ bool MeshStorage::_multimesh_enable_motion_vectors(RID p_multimesh) {
 		multimesh->data_cache.append_array(multimesh->data_cache);
 	}
 
-	if (multimesh->buffer_set) {
-		RD::get_singleton()->barrier();
-		Vector<uint8_t> buffer_data = RD::get_singleton()->buffer_get_data(multimesh->buffer);
-		if (!multimesh->data_cache.is_empty()) {
-			memcpy(buffer_data.ptrw(), multimesh->data_cache.ptr(), buffer_data.size());
-		}
+	uint32_t buffer_size = multimesh->instances * multimesh->stride_cache * sizeof(float);
+	uint32_t new_buffer_size = buffer_size * 2;
+	RID new_buffer = RD::get_singleton()->storage_buffer_create(new_buffer_size);
 
-		RD::get_singleton()->free(multimesh->buffer);
-		uint32_t buffer_size = multimesh->instances * multimesh->stride_cache * sizeof(float) * 2;
-		multimesh->buffer = RD::get_singleton()->storage_buffer_create(buffer_size);
-		RD::get_singleton()->buffer_update(multimesh->buffer, 0, buffer_data.size(), buffer_data.ptr(), RD::BARRIER_MASK_NO_BARRIER);
-		RD::get_singleton()->buffer_update(multimesh->buffer, buffer_data.size(), buffer_data.size(), buffer_data.ptr());
-		multimesh->uniform_set_3d = RID(); // Cleared by dependency
-		return true;
+	if (multimesh->buffer_set && multimesh->data_cache.is_empty()) {
+		// If the buffer was set but there's no data cached in the CPU, we copy the buffer directly on the GPU.
+		RD::get_singleton()->barrier();
+		RD::get_singleton()->buffer_copy(multimesh->buffer, new_buffer, 0, 0, buffer_size, RD::BARRIER_MASK_NO_BARRIER);
+		RD::get_singleton()->buffer_copy(multimesh->buffer, new_buffer, 0, buffer_size, buffer_size);
+	} else if (!multimesh->data_cache.is_empty()) {
+		// Simply upload the data cached in the CPU, which should already be doubled in size.
+		ERR_FAIL_COND(multimesh->data_cache.size() * sizeof(float) != size_t(new_buffer_size));
+		RD::get_singleton()->buffer_update(new_buffer, 0, new_buffer_size, multimesh->data_cache.ptr());
 	}
-	return false; // Update the transforms uniform set cache
+
+	if (multimesh->buffer.is_valid()) {
+		RD::get_singleton()->free(multimesh->buffer);
+	}
+
+	multimesh->buffer = new_buffer;
+	multimesh->uniform_set_3d = RID(); // Cleared by dependency.
+
+	// Invalidate any references to the buffer that was released and the uniform set that was pointing to it.
+	multimesh->dependency.changed_notify(Dependency::DEPENDENCY_CHANGED_MULTIMESH);
 }
 
 void MeshStorage::_multimesh_get_motion_vectors_offsets(RID p_multimesh, uint32_t &r_current_offset, uint32_t &r_prev_offset) {
@@ -1528,6 +1536,12 @@ void MeshStorage::multimesh_instance_set_transform(RID p_multimesh, int p_index,
 	ERR_FAIL_COND(multimesh->xform_format != RS::MULTIMESH_TRANSFORM_3D);
 
 	_multimesh_make_local(multimesh);
+
+	bool uses_motion_vectors = (RSG::viewport->get_num_viewports_with_motion_vectors() > 0);
+	if (uses_motion_vectors) {
+		_multimesh_enable_motion_vectors(multimesh);
+	}
+
 	_multimesh_update_motion_vectors_data_cache(multimesh);
 
 	{
@@ -1745,6 +1759,11 @@ void MeshStorage::multimesh_set_buffer(RID p_multimesh, const Vector<float> &p_b
 	MultiMesh *multimesh = multimesh_owner.get_or_null(p_multimesh);
 	ERR_FAIL_COND(!multimesh);
 	ERR_FAIL_COND(p_buffer.size() != (multimesh->instances * (int)multimesh->stride_cache));
+
+	bool uses_motion_vectors = (RSG::viewport->get_num_viewports_with_motion_vectors() > 0);
+	if (uses_motion_vectors) {
+		_multimesh_enable_motion_vectors(multimesh);
+	}
 
 	if (multimesh->motion_vectors_enabled) {
 		uint32_t frame = RSG::rasterizer->get_frame_number();

@@ -67,6 +67,7 @@ private:
 	double _physics_interpolation_fraction = 0.0f;
 	bool abort_on_gpu_errors = false;
 	bool use_validation_layers = false;
+	bool generate_spirv_debug_info = false;
 	int32_t gpu_idx = -1;
 
 	uint64_t _process_frames = 0;
@@ -82,11 +83,6 @@ private:
 
 	String write_movie_path;
 	String shader_cache_path;
-
-	Dictionary startup_benchmark_json;
-	String startup_benchmark_section;
-	uint64_t startup_benchmark_from = 0;
-	uint64_t startup_benchmark_total_from = 0;
 
 public:
 	static Engine *get_singleton();
@@ -161,12 +157,8 @@ public:
 
 	bool is_abort_on_gpu_errors_enabled() const;
 	bool is_validation_layers_enabled() const;
+	bool is_generate_spirv_debug_info_enabled() const;
 	int32_t get_gpu_index() const;
-
-	void startup_begin();
-	void startup_benchmark_begin_measure(const String &p_what);
-	void startup_benchmark_end_measure();
-	void startup_dump(const String &p_to_file);
 
 	Engine();
 	virtual ~Engine() {}
