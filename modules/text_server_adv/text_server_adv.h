@@ -272,6 +272,7 @@ class TextServerAdvanced : public TextServerExtension {
 		Vector2i size;
 
 		Vector<ShelfPackTexture> textures;
+		HashMap<int64_t, int64_t> inv_glyph_map;
 		HashMap<int32_t, FontGlyph> glyph_map;
 		HashMap<Vector2i, Vector2> kerning_map;
 		hb_font_t *hb_handle = nullptr;
@@ -475,6 +476,7 @@ class TextServerAdvanced : public TextServerExtension {
 
 		/* Shaped data */
 		TextServer::Direction para_direction = DIRECTION_LTR; // Detected text direction.
+		int base_para_direction = UBIDI_DEFAULT_LTR;
 		bool valid = false; // String is shaped.
 		bool line_breaks_valid = false; // Line and word break flags are populated (and virtual zero width spaces inserted).
 		bool justification_ops_valid = false; // Virtual elongation glyphs are added to the string.
@@ -514,7 +516,9 @@ class TextServerAdvanced : public TextServerExtension {
 
 		~ShapedTextDataAdvanced() {
 			for (int i = 0; i < bidi_iter.size(); i++) {
-				ubidi_close(bidi_iter[i]);
+				if (bidi_iter[i]) {
+					ubidi_close(bidi_iter[i]);
+				}
 			}
 			if (script_iter) {
 				memdelete(script_iter);
@@ -814,6 +818,7 @@ public:
 	MODBIND3RC(Vector2, font_get_kerning, const RID &, int64_t, const Vector2i &);
 
 	MODBIND4RC(int64_t, font_get_glyph_index, const RID &, int64_t, int64_t, int64_t);
+	MODBIND3RC(int64_t, font_get_char_from_glyph_index, const RID &, int64_t, int64_t);
 
 	MODBIND2RC(bool, font_has_char, const RID &, int64_t);
 	MODBIND1RC(String, font_get_supported_chars, const RID &);

@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="RenderingDevice" inherits="Object" version="4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="RenderingDevice" inherits="Object" version="4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Abstraction for working with modern low-level graphics APIs.
 	</brief_description>
@@ -113,7 +113,7 @@
 		</method>
 		<method name="compute_pipeline_is_valid">
 			<return type="bool" />
-			<param index="0" name="compute_pieline" type="RID" />
+			<param index="0" name="compute_pipeline" type="RID" />
 			<description>
 			</description>
 		</method>

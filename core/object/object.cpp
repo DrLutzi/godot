@@ -195,14 +195,15 @@ bool Object::_predelete() {
 	_predelete_ok = 1;
 	notification(NOTIFICATION_PREDELETE, true);
 	if (_predelete_ok) {
-		_class_ptr = nullptr; //must restore so destructors can access class ptr correctly
+		_class_name_ptr = nullptr; // Must restore, so constructors/destructors have proper class name access at each stage.
 	}
 	return _predelete_ok;
 }
 
 void Object::_postinitialize() {
-	_class_ptr = _get_class_namev();
+	_class_name_ptr = _get_class_namev(); // Set the direct pointer, which is much faster to obtain, but can only happen after postinitialize.
 	_initialize_classv();
+	_class_name_ptr = nullptr; // May have been called from a constructor.
 	notification(NOTIFICATION_POSTINITIALIZE);
 }
 
@@ -1378,7 +1379,12 @@ String Object::tr(const StringName &p_message, const StringName &p_context) cons
 	if (!_can_translate || !TranslationServer::get_singleton()) {
 		return p_message;
 	}
-	return TranslationServer::get_singleton()->translate(p_message, p_context);
+
+	if (Engine::get_singleton()->is_editor_hint()) {
+		return TranslationServer::get_singleton()->tool_translate(p_message, p_context);
+	} else {
+		return TranslationServer::get_singleton()->translate(p_message, p_context);
+	}
 }
 
 String Object::tr_n(const StringName &p_message, const StringName &p_message_plural, int p_n, const StringName &p_context) const {
@@ -1389,7 +1395,12 @@ String Object::tr_n(const StringName &p_message, const StringName &p_message_plu
 		}
 		return p_message_plural;
 	}
-	return TranslationServer::get_singleton()->translate_plural(p_message, p_message_plural, p_n, p_context);
+
+	if (Engine::get_singleton()->is_editor_hint()) {
+		return TranslationServer::get_singleton()->tool_translate_plural(p_message, p_message_plural, p_n, p_context);
+	} else {
+		return TranslationServer::get_singleton()->translate_plural(p_message, p_message_plural, p_n, p_context);
+	}
 }
 
 void Object::_clear_internal_resource_paths(const Variant &p_var) {

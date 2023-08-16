@@ -66,7 +66,9 @@ using namespace godot;
 #endif
 
 #ifdef MODULE_SVG_ENABLED
+#ifdef MODULE_FREETYPE_ENABLED
 #include "thorvg_svg_in_ot.h"
+#endif
 #endif
 
 /*************************************************************************/
@@ -2173,6 +2175,10 @@ int64_t TextServerFallback::_font_get_glyph_index(const RID &p_font_rid, int64_t
 	return (int64_t)p_char;
 }
 
+int64_t TextServerFallback::_font_get_char_from_glyph_index(const RID &p_font_rid, int64_t p_size, int64_t p_glyph_index) const {
+	return p_glyph_index;
+}
+
 bool TextServerFallback::_font_has_char(const RID &p_font_rid, int64_t p_char) const {
 	FontFallback *fd = font_owner.get_or_null(p_font_rid);
 	ERR_FAIL_COND_V_MSG((p_char >= 0xd800 && p_char <= 0xdfff) || (p_char > 0x10ffff), false, "Unicode parsing error: Invalid unicode codepoint " + String::num_int64(p_char, 16) + ".");
@@ -3664,7 +3670,7 @@ bool TextServerFallback::_shaped_text_shape(const RID &p_shaped) {
 			gl.end = span.end;
 			gl.count = 1;
 			gl.index = 0;
-			gl.flags = GRAPHEME_IS_VALID | GRAPHEME_IS_VIRTUAL;
+			gl.flags = GRAPHEME_IS_VALID | GRAPHEME_IS_EMBEDDED_OBJECT;
 			if (sd->orientation == ORIENTATION_HORIZONTAL) {
 				gl.advance = sd->objects[span.embedded_key].rect.size.x;
 			} else {

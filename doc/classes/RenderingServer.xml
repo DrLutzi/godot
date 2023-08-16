@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8" ?>
-<class name="RenderingServer" inherits="Object" version="4.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
+<class name="RenderingServer" inherits="Object" version="4.1" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../class.xsd">
 	<brief_description>
 		Server for anything visible.
 	</brief_description>
@@ -2366,7 +2366,7 @@
 		<method name="particles_collision_set_attractor_strength">
 			<return type="void" />
 			<param index="0" name="particles_collision" type="RID" />
-			<param index="1" name="setrngth" type="float" />
+			<param index="1" name="strength" type="float" />
 			<description>
 			</description>
 		</method>

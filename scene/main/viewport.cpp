@@ -165,6 +165,31 @@ ViewportTexture::~ViewportTexture() {
 	}
 }
 
+void Viewport::_process_dirty_canvas_parent_orders() {
+	for (const ObjectID &id : gui.canvas_parents_with_dirty_order) {
+		Object *obj = ObjectDB::get_instance(id);
+		if (!obj) {
+			continue; // May have been deleted.
+		}
+
+		Node *n = static_cast<Node *>(obj);
+		for (int i = 0; i < n->get_child_count(); i++) {
+			Node *c = n->get_child(i);
+			CanvasItem *ci = Object::cast_to<CanvasItem>(c);
+			if (ci) {
+				ci->update_draw_order();
+				continue;
+			}
+			CanvasLayer *cl = Object::cast_to<CanvasLayer>(c);
+			if (cl) {
+				cl->update_draw_order();
+			}
+		}
+	}
+
+	gui.canvas_parents_with_dirty_order.clear();
+}
+
 void Viewport::_sub_window_update_order() {
 	if (gui.sub_windows.size() < 2) {
 		return;
@@ -875,6 +900,17 @@ void Viewport::_set_size(const Size2i &p_size, const Size2i &p_size_2d_override,
 	}
 
 	emit_signal(SNAME("size_changed"));
+
+	Rect2i limit = get_visible_rect();
+	for (int i = 0; i < gui.sub_windows.size(); ++i) {
+		Window *sw = gui.sub_windows[i].window;
+		Rect2i rect = Rect2i(sw->position, sw->size);
+		Rect2i new_rect = sw->fit_rect_in_parent(rect, limit);
+		if (new_rect != rect) {
+			sw->set_position(new_rect.position);
+			sw->set_size(new_rect.size);
+		}
+	}
 }
 
 Size2i Viewport::_get_size() const {
@@ -916,6 +952,14 @@ Rect2 Viewport::get_visible_rect() const {
 	}
 
 	return r;
+}
+
+void Viewport::canvas_parent_mark_dirty(Node *p_node) {
+	bool request_update = gui.canvas_parents_with_dirty_order.is_empty();
+	gui.canvas_parents_with_dirty_order.insert(p_node->get_instance_id());
+	if (request_update) {
+		MessageQueue::get_singleton()->push_callable(callable_mp(this, &Viewport::_process_dirty_canvas_parent_orders));
+	}
 }
 
 void Viewport::_update_audio_listener_2d() {
@@ -2553,23 +2597,7 @@ bool Viewport::_sub_windows_forward_input(const Ref<InputEvent> &p_event) {
 				Rect2i new_rect(gui.subwindow_drag_pos + diff, gui.subwindow_focused->get_size());
 
 				if (gui.subwindow_focused->is_clamped_to_embedder()) {
-					Size2i limit = get_visible_rect().size;
-					if (new_rect.position.x + new_rect.size.x > limit.x) {
-						new_rect.position.x = limit.x - new_rect.size.x;
-					}
-					if (new_rect.position.y + new_rect.size.y > limit.y) {
-						new_rect.position.y = limit.y - new_rect.size.y;
-					}
-
-					if (new_rect.position.x < 0) {
-						new_rect.position.x = 0;
-					}
-
-					int title_height = gui.subwindow_focused->get_flag(Window::FLAG_BORDERLESS) ? 0 : gui.subwindow_focused->get_theme_constant(SNAME("title_height"));
-
-					if (new_rect.position.y < title_height) {
-						new_rect.position.y = title_height;
-					}
+					new_rect = gui.subwindow_focused->fit_rect_in_parent(new_rect, get_visible_rect());
 				}
 
 				gui.subwindow_focused->_rect_changed_callback(new_rect);
