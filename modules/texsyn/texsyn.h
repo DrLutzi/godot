@@ -116,7 +116,9 @@ public:
 	void test_colorSynthesisPrototype2(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
 	void test_colorSynthesisPrototype3(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
 	void precomputeLocallyStationary(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> gaussianOutputRef, 
-										Ref<Image> invTRef, Ref<Image> regionsOutputRef, Ref<Image> originsRef, Ref<ImageTexture3D> invTFilteredRef);
+										Ref<Image> invTRef, Ref<Image> regionsOutputRef, Ref<Image> originsRef, Ref<Texture2DArray> invTFilteredRef);
+	void precomputeLocalPCA(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> pcaOutputRef, Ref<Image> invPCARef, 
+							Ref<Image> regionsOutputRef, Ref<Image> originsRef);
 	
 protected:
 	static void _bind_methods();

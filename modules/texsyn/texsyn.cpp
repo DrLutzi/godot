@@ -733,7 +733,7 @@ void ProceduralSampling::test_colorSynthesisPrototype3(Ref<Image> exemplar, Ref<
 
 void ProceduralSampling::precomputeLocallyStationary(	Ref<Image> exemplar, Ref<Image> regions, Ref<Image> gaussianOutputRef, 
 														Ref<Image> invTRef, Ref<Image> regionsOutputRef, Ref<Image> originsRef, 
-														Ref<ImageTexture3D> invTFilteredRef)
+														Ref<Texture2DArray> invTFilteredRef)
 {
 	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
 	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
@@ -782,8 +782,6 @@ void ProceduralSampling::precomputeLocallyStationary(	Ref<Image> exemplar, Ref<I
 		int maxX=0, maxY=0, minX=regionsInt.get_width()-1, minY=regionsInt.get_height()-1;
 		regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
 		{
-//			dx = double(x)/(regionsInt.get_width()-1);
-//			dy = double(y)/(regionsInt.get_height()-1);
 			if(pix == otherID)
 			{
 				maxX = std::max(maxX, x);
@@ -852,7 +850,7 @@ void ProceduralSampling::precomputeLocallyStationary(	Ref<Image> exemplar, Ref<I
 		TinvVectorRef.write[i]->save_png(String("invTRef_num.png").replace("num", String::num_int64(i)));
 	}
 	
-	invTFilteredRef->create(Image::FORMAT_RGBF, Tinv.get_width(), Tinv.get_height(), TinvVector.size(), false, TinvVectorRef);
+	invTFilteredRef->create_from_images(TinvVectorRef);
 	
 	TexSyn::ImageScalar<double> regionsOutput;
 	regionsOutput.init(regions->get_width(), regions->get_height(), true);
@@ -874,6 +872,186 @@ void ProceduralSampling::precomputeLocallyStationary(	Ref<Image> exemplar, Ref<I
 		tmpResultRef = Image::create_empty(TG.get_width(), TG.get_height(), false, Image::FORMAT_RGBF);
 		TG.toImageIndexed(tmpResultRef, 0);
 		gaussianOutputRef->copy_from(tmpResultRef);
+	}
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(regionsOutput.get_width(), regionsOutput.get_height(), false, Image::FORMAT_RF);
+		regionsOutput.toImage(tmpResultRef, 0);
+		regionsOutputRef->copy_from(tmpResultRef);
+	}
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(imageOrigins.get_width(), imageOrigins.get_height(), false, Image::FORMAT_RGF);
+		imageOrigins.toImageIndexed(tmpResultRef, 0);
+		originsRef->copy_from(tmpResultRef);
+	}
+	
+	return;
+}
+
+void ProceduralSampling::precomputeLocalPCA(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> pcaOutputRef, Ref<Image> invPCARef, 
+											Ref<Image> regionsOutputRef, Ref<Image> originsRef)
+{
+	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
+	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
+	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
+	ERR_FAIL_COND_MSG(regions->is_empty(), "regions must not be empty.");
+	ERR_FAIL_COND_MSG(pcaOutputRef.is_null(), "debugResult must not be null.");
+	ERR_FAIL_COND_MSG(!pcaOutputRef->is_empty(), "fgbgmap must be empty.");
+	
+	//creating the id map with integers from regions
+	using ImageRegionType = TexSyn::ImageScalar<int>;
+	using MapType = HashMap<Color, int>;
+	ImageRegionType regionsInt;
+	MapType histogramRegions;
+	regionsInt.init(exemplar->get_width(), exemplar->get_height(), true);
+	int id = 1;
+	regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
+	{
+		Color c = regions->get_pixel(x, y);
+		if(c.is_equal_approx(Color(1, 1, 1)))
+		{
+			pix = 0;
+		}
+		else
+		{
+			MapType::Iterator it = histogramRegions.find(c);
+			if(it != histogramRegions.end())
+			{
+				pix = it->value;
+			}
+			else
+			{
+				MapType::Iterator it2 = histogramRegions.insert(c, id);
+				++id;
+				pix = it2->value;
+			}
+		}
+	});
+	
+	
+	//Constructing the origins of each region for seeding in the shader
+	TexSyn::ImageVector<float> imageOrigins;
+	imageOrigins.init(id, 1, 2);
+	for(int otherID=0; otherID<id; ++otherID)
+	{
+		float dx = 0.0, dy = 0.0;
+		int maxX=0, maxY=0, minX=regionsInt.get_width()-1, minY=regionsInt.get_height()-1;
+		regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
+		{
+			if(pix == otherID)
+			{
+				maxX = std::max(maxX, x);
+				maxY = std::max(maxY, y);
+				minX = std::min(minX, x);
+				minY = std::min(minY, y);
+			}
+		});
+		if(maxX == regionsInt.get_width()-1 && minX == 0)
+		{
+			dx = 0.5;
+		}
+		if(maxY == regionsInt.get_width()-1 && minY == 0)
+		{
+			dy = 0.5;
+		}
+		imageOrigins.set_pixel(otherID, 0, 0, dx);
+		imageOrigins.set_pixel(otherID, 0, 1, dy);
+	}
+	
+	
+	TexSyn::ColorSynthesisPrototype csp;
+	TexSyn::GaussianTransfer gst;
+
+	TexSyn::ImageVector<double> exemplarIV;
+	exemplarIV.fromImage(exemplar);
+	csp.setExemplar(exemplarIV);
+	
+	//computing the pre-filtered LUT
+	TexSyn::MipmapMultiIDMap mipmapMultiIDMap;
+	TexSyn::MipmapMultiIDMap::ImageMultiIDMapType multiIdMap;
+	gst.toMultipleRegions(multiIdMap, regionsInt);
+	mipmapMultiIDMap.setIDMap(multiIdMap);
+	mipmapMultiIDMap.computeMipmap();
+	mipmapMultiIDMap.upsizeMipmap();
+	
+	//generating the mipmap of the exemplar
+	TexSyn::Mipmap mipmapExemplar;
+	mipmapExemplar.setTexture(exemplarIV);
+	mipmapExemplar.computeMipmap();
+	mipmapExemplar.upsizeMipmap();
+	
+	//computing local PCAs, projected exemplar, and packing inverse PCA infos
+	TexSyn::ImageVector<double> PCAOutput;
+	PCAOutput.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
+	using PCAType = TexSyn::PCA<double>;
+	LocalVector<PCAType> localPCAs;
+	TexSyn::ImageVector<double> invPCA;
+	invPCA.init(1+exemplarIV.get_nbDimensions(), id, exemplarIV.get_nbDimensions(), true);
+	for(int i=0; i<id; ++i)
+	{
+		localPCAs.push_back(PCAType(exemplarIV, multiIdMap, uint64_t(i)));
+		localPCAs[i].computePCA();
+		localPCAs[i].project(PCAOutput);
+		PCAType::MatrixType localEigenVectors = localPCAs[i].get_eigenVectors();
+		PCAType::VectorType localMean = localPCAs[i].get_mean();
+		//filling invPCA: at x=0, mean, and then eigen vectors
+		for(unsigned int d=0; d<exemplarIV.get_nbDimensions(); ++d)
+		{
+			invPCA.set_pixel(0, i, d, localMean[d]);
+			for(int r=0; r<localEigenVectors.rows(); ++r)
+			{
+				invPCA.set_pixel(r+1, i, d, localEigenVectors(r, d)); //c, i, r ?
+			}
+		}
+	}
+	//In order to save in .png, add 0.5
+	PCAOutput.for_all_images([&] (TexSyn::ImageVector<double>::ImageScalarType &image, unsigned int d)
+	{
+		image.for_all_pixels([&] (TexSyn::ImageVector<double>::ImageScalarType::DataType &pix)
+		{
+			pix += 0.5;
+		});
+	});
+	
+	Vector<Ref<Image>> TinvVectorRef;
+	TinvVectorRef.resize(mipmapMultiIDMap.nbMaps());
+	
+//	for(int i=0; i<mipmapMultiIDMap.nbMaps(); ++i)
+//	{
+//		TexSyn::ImageVector<double> Tinv;
+//		Tinv.init(128, id, mipmapExemplar.mipmap(i).get_nbDimensions(), true);
+//		gst.computeinvTMultipleRegions(mipmapExemplar.mipmap(i), mipmapMultiIDMap.mipmap(i), Tinv, false);
+//		TinvVector.push_back(Tinv);
+//		Ref<Image> tmpResultRef = Image::create_empty(Tinv.get_width(), Tinv.get_height(), false, Image::FORMAT_RGBF);
+//		Tinv.toImageIndexed(tmpResultRef, 0);
+//		TinvVectorRef.write[i].instantiate();
+//		TinvVectorRef.write[i]->copy_from(tmpResultRef);
+//		TinvVectorRef.write[i]->save_png(String("invTRef_num.png").replace("num", String::num_int64(i)));
+//	}
+	
+	TexSyn::ImageScalar<double> regionsOutput;
+	regionsOutput.init(regions->get_width(), regions->get_height(), true);
+	regionsOutput.for_all_pixels([&] (double & pix, int x, int y)
+	{
+		int region = regionsInt.get_pixel(x, y);
+		pix = float(region)/(id-1);
+	});
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(invPCA.get_width(), invPCA.get_height(), false, Image::FORMAT_RGBF);
+		invPCA.toImageIndexed(tmpResultRef, 0);
+		invPCARef->copy_from(tmpResultRef);
+	}
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(PCAOutput.get_width(), PCAOutput.get_height(), false, Image::FORMAT_RGBF);
+		PCAOutput.toImageIndexed(tmpResultRef, 0);
+		pcaOutputRef->copy_from(tmpResultRef);
 	}
 	
 	{
@@ -975,7 +1153,8 @@ void ProceduralSampling::_bind_methods()
 	ClassDB::bind_method(D_METHOD("test_colorSynthesisPrototype2", "exemplar", "regions", "fgbgmap", "result", "debug"), &ProceduralSampling::test_colorSynthesisPrototype2);
 	ClassDB::bind_method(D_METHOD("test_colorSynthesisPrototype3", "exemplar", "regions", "fgbgmap", "result", "debug"), &ProceduralSampling::test_colorSynthesisPrototype3);
 	
-	ClassDB::bind_method(D_METHOD("precomputeLocallyStationary", "exemplar", "regions", "gaussianOutput", "invT", "regionsOutput"), &ProceduralSampling::precomputeLocallyStationary);
+	ClassDB::bind_method(D_METHOD("precomputeLocallyStationary", "exemplar", "regions", "gaussianOutput", "invT", "regionsOutput", "originsRef", "invTFiltered"), &ProceduralSampling::precomputeLocallyStationary);
+	ClassDB::bind_method(D_METHOD("precomputeLocalPCA", "exemplar", "regions", "PCAOutput", "invPCA", "regionsOutput", "originsRef"), &ProceduralSampling::precomputeLocalPCA);
 }
 
 #endif //ifdef TEXSYN_TESTS
