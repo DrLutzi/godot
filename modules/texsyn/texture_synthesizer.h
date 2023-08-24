@@ -3,9 +3,9 @@
 
 #include "image_scalar.h"
 #include "image_vector.h"
-#include "texsyn_pca.h"
-#include "texsyn_statistics.h"
-#include "texsyn_procedural_sampling.h"
+#include "pca.h"
+#include "statistics.h"
+#include "procedural_sampling.h"
 #include "scene/resources/image_texture.h"
 
 constexpr std::uint32_t texsyn_log2(std::uint32_t n) noexcept
@@ -61,9 +61,9 @@ private:
 	StatisticsType *m_statistics;
 };
 
-class ProceduralSampling : public RefCounted
+class TextureSynthesizer : public RefCounted
 {
-	GDCLASS(ProceduralSampling, RefCounted);
+	GDCLASS(TextureSynthesizer, RefCounted);
 
 public:
 
@@ -80,7 +80,7 @@ public:
 		RIM=256
 	};
 
-	ProceduralSampling();
+	TextureSynthesizer();
 
 	void set_albedo(Ref<Image> image);
 	void set_normal(Ref<Image> image);
@@ -113,8 +113,6 @@ public:
 	void centerExemplar(Ref<Image> exemplar, Ref<Image> mean);
 	
 	void test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
-	void test_colorSynthesisPrototype2(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
-	void test_colorSynthesisPrototype3(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
 	void precomputeLocallyStationary(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> gaussianOutputRef, 
 										Ref<Image> invTRef, Ref<Image> regionsOutputRef, Ref<Image> originsRef, Ref<Texture2DArray> invTFilteredRef);
 	void precomputeLocalPCA(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> pcaOutputRef, Ref<Image> invPCARef, 
@@ -140,7 +138,7 @@ private:
 
 bool texsyn_tests();
 
-VARIANT_ENUM_CAST(ProceduralSampling::TextureTypeFlag);
+VARIANT_ENUM_CAST(TextureSynthesizer::TextureTypeFlag);
 
 #endif //ifdef TEXSYN_TESTS
 

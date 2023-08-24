@@ -1,4 +1,4 @@
-#include "mipmap_id.h"
+#include "mipmaps.h"
 
 namespace TexSyn
 {

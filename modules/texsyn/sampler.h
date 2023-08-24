@@ -13,8 +13,6 @@
 namespace TexSyn
 {
 
-//TODO: add iterator for samplers
-
 /**
  * @brief The SamplerBase class is an interface for every Samplers.
  * the main idea is for them to provide an array of coordinates between (0, 0) and (1, 1),

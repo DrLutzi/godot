@@ -5,12 +5,14 @@ Import("env_modules")
 
 sources = [
 	"register_types.cpp",
-	"texsyn.cpp",
-	"texsyn_sampler.cpp",
+	"texture_synthesizer.cpp",
+    "interface_pyramids.cpp",
+    "tests/texsyn_tests.cpp",
+	"sampler.cpp",
     "wasserstein.cpp",
     "colorsynthesisprototype.cpp",
     "gaussian_transfer.cpp",
-    "mipmap_id.cpp"
+    "mipmaps.cpp"
 ]
 
 env_texsyn = env_modules.Clone()

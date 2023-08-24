@@ -2,7 +2,7 @@
 #define TEXSYN_PROCEDURAL_SAMPLING_H
 
 #include "image_vector.h"
-#include "texsyn_sampler.h"
+#include "sampler.h"
 
 namespace TexSyn
 {

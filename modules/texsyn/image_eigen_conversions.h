@@ -3,7 +3,7 @@
 
 #include "image_vector.h"
 #include "eigen/Eigen/Dense"
-#include "mipmap_id.h"
+#include "mipmaps.h"
 
 namespace TexSyn
 {

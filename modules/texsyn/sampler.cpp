@@ -1,4 +1,4 @@
-#include "texsyn_sampler.h"
+#include "sampler.h"
 
 namespace TexSyn
 {

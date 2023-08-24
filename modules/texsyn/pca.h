@@ -1,10 +1,10 @@
 #ifndef TEXSYN_PCA_H
 #define TEXSYN_PCA_H
 
-#include "texsyn_statistics.h"
-#include "image_eigen.h"
+#include "statistics.h"
+#include "image_eigen_conversions.h"
 #include "eigen/Eigen/Dense"
-#include "mipmap_id.h"
+#include "mipmaps.h"
 
 namespace TexSyn
 {
