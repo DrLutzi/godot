@@ -29,7 +29,7 @@ public:
 	const ImageType *exemplarPtr() const;
 	const SamplerBase *sampler() const;
 
-	void weightedMean(ImageType &mean, int width, int height, int nbSamples);
+	void computeWeightedMean(ImageType &mean, int width, int height, int nbSamples);
 	void preComputeSamplerRealization(ImageVector<float> &realization, int size);
 
 private:
@@ -76,7 +76,7 @@ const SamplerBase *ProceduralSampling<T>::sampler() const
 }
 
 template<typename T>
-void ProceduralSampling<T>::weightedMean(ImageType &mean, int width, int height, int nbSamples)
+void ProceduralSampling<T>::computeWeightedMean(ImageType &mean, int width, int height, int nbSamples)
 {
 	DEV_ASSERT(m_sampler != nullptr && m_exemplar!=nullptr && m_exemplar->is_initialized());
 	mean.init(width, height, m_exemplar->get_nbDimensions(), true);

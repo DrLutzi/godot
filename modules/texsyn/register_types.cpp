@@ -14,6 +14,8 @@ void initialize_texsyn_module(ModuleInitializationLevel p_level)
 	ClassDB::register_class<TexSyn::RieszPyr>();
 
 	ClassDB::register_class<TextureSynthesizer>();
+	ClassDB::register_class<SamplerTextureSynthesizer>();
+	ClassDB::register_class<LocallyStationaryTextureSynthesizer>();
 
 #ifdef TEXSYN_TESTS
 	DEV_ASSERT(texsyn_tests());

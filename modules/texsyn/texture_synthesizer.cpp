@@ -2,24 +2,18 @@
 #include "scene/resources/texture.h"
 #include "texture_synthesizer.h"
 #include "colorsynthesisprototype.h"
-#include "gaussian_transfer.h"
-#include "pca.h"
 
 TextureSynthesizer::TextureSynthesizer() :
 	m_textureTypeFlag(0),
 	m_imageRefs(),
-	m_proceduralSampling(),
 	m_exemplar(),
-	m_weightedMean(),
-	m_meanAccuracy(1024)
+	m_outputImageVector()
 {
 	m_imageRefs.resize(9);
-	m_proceduralSampling.set_exemplar(&m_exemplar);
 }
 
 void TextureSynthesizer::set_albedo(Ref<Image> image)
 {
-	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
 	ERR_FAIL_COND_MSG(image->is_empty(), "image must not be empty.");
 	ERR_FAIL_COND_MSG(m_exemplar.is_initialized(),
 					  "you must set every map before attempting to get any spatially varying mean.");
@@ -30,7 +24,6 @@ void TextureSynthesizer::set_albedo(Ref<Image> image)
 
 void TextureSynthesizer::set_normal(Ref<Image> image)
 {
-	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
 	ERR_FAIL_COND_MSG(image->is_empty(), "image must not be empty.");
 	ERR_FAIL_COND_MSG(m_exemplar.is_initialized(),
 					  "you must set every map before attempting to get any spatially varying mean.");
@@ -41,7 +34,6 @@ void TextureSynthesizer::set_normal(Ref<Image> image)
 
 void TextureSynthesizer::set_height(Ref<Image> image)
 {
-	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
 	ERR_FAIL_COND_MSG(image->is_empty(), "image must not be empty.");
 	ERR_FAIL_COND_MSG(m_exemplar.is_initialized(),
 					  "you must set every map before attempting to get any spatially varying mean.");
@@ -52,7 +44,6 @@ void TextureSynthesizer::set_height(Ref<Image> image)
 
 void TextureSynthesizer::set_roughness(Ref<Image> image)
 {
-	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
 	ERR_FAIL_COND_MSG(image->is_empty(), "image must not be empty.");
 	ERR_FAIL_COND_MSG(m_exemplar.is_initialized(),
 					  "you must set every map before attempting to get any spatially varying mean.");
@@ -63,7 +54,6 @@ void TextureSynthesizer::set_roughness(Ref<Image> image)
 
 void TextureSynthesizer::set_metallic(Ref<Image> image)
 {
-	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
 	ERR_FAIL_COND_MSG(image->is_empty(), "image must not be empty.");
 	ERR_FAIL_COND_MSG(m_exemplar.is_initialized(),
 					  "you must set every map before attempting to get any spatially varying mean.");
@@ -74,7 +64,6 @@ void TextureSynthesizer::set_metallic(Ref<Image> image)
 
 void TextureSynthesizer::set_ao(Ref<Image> image)
 {
-	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
 	ERR_FAIL_COND_MSG(image->is_empty(), "image must not be empty.");
 	ERR_FAIL_COND_MSG(m_exemplar.is_initialized(),
 					  "you must set every map before attempting to get any spatially varying mean.");
@@ -85,6 +74,7 @@ void TextureSynthesizer::set_ao(Ref<Image> image)
 
 void TextureSynthesizer::set_component(TextureTypeFlag type, Ref<Image> image)
 {
+	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
 	switch(type)
 	{
 		case ALBEDO:
@@ -111,67 +101,31 @@ void TextureSynthesizer::set_component(TextureTypeFlag type, Ref<Image> image)
 	}
 }
 
-void TextureSynthesizer::spatiallyVaryingMeanToAlbedo(Ref<Image> image)
+void TextureSynthesizer::outputToAlbedo(Ref<Image> image)
 {
 	ERR_FAIL_COND_MSG(!(m_textureTypeFlag & ALBEDO),
-					  "albedo must be set with set_albedo first.");
-	ERR_FAIL_COND_MSG(m_proceduralSampling.sampler() == nullptr,
-					  "the sampler must be activated first (either with computeAutocovarianceSampler or set_cyclostationaryPeriods).");
-	if(!m_exemplar.is_initialized())
-	{
-		computeImageVector();
-	}
-	ERR_FAIL_COND_MSG(!m_proceduralSampling.exemplarPtr() || !m_proceduralSampling.exemplarPtr()->is_initialized(),
-					  "albedo must be set with set_albedo first.");
-	if(!m_weightedMean.is_initialized())
-	{
-		m_proceduralSampling.weightedMean(m_weightedMean, image->get_width(), image->get_height(), m_meanAccuracy);
-	}
-	m_weightedMean.toImageIndexed(image, 0);
+						"albedo must be set first.");
+	m_outputImageVector.toImageIndexed(image, 0);
 	return;
 }
 
-void TextureSynthesizer::spatiallyVaryingMeanToNormal(Ref<Image> image)
+void TextureSynthesizer::outputToNormal(Ref<Image> image)
 {
 	ERR_FAIL_COND_MSG(!(m_textureTypeFlag & NORMAL),
-					  "normal must be set with set_normal first.");
-	ERR_FAIL_COND_MSG(m_proceduralSampling.sampler() == nullptr,
-					  "the sampler must be activated first (either with computeAutocovarianceSampler or set_cyclostationaryPeriods).");
-	if(!m_exemplar.is_initialized())
-	{
-		computeImageVector();
-	}
-	ERR_FAIL_COND_MSG(!m_proceduralSampling.exemplarPtr() || !m_proceduralSampling.exemplarPtr()->is_initialized(),
-					  "normal must be set with set_normal first.");
-	if(!m_weightedMean.is_initialized())
-	{
-		m_proceduralSampling.weightedMean(m_weightedMean, image->get_width(), image->get_height(), m_meanAccuracy);
-	}
+						"normal must be set first.");
 	unsigned int index = 0;
 	if(m_textureTypeFlag & ALBEDO)
 	{
 		index += 3;
 	}
-	m_weightedMean.toImageIndexed(image, index);
+	m_outputImageVector.toImageIndexed(image, index);
 	return;
 }
 
-void TextureSynthesizer::spatiallyVaryingMeanToHeight(Ref<Image> image)
+void TextureSynthesizer::outputToHeight(Ref<Image> image)
 {
 	ERR_FAIL_COND_MSG(!(m_textureTypeFlag & HEIGHT),
-					  "height must be set with set_height first.");
-	ERR_FAIL_COND_MSG(m_proceduralSampling.sampler() == nullptr,
-					  "the sampler must be activated first (either with computeAutocovarianceSampler or set_cyclostationaryPeriods).");
-	if(!m_exemplar.is_initialized())
-	{
-		computeImageVector();
-	}
-	ERR_FAIL_COND_MSG(!m_proceduralSampling.exemplarPtr() || !m_proceduralSampling.exemplarPtr()->is_initialized(),
-					  "height must be set with set_height first.");
-	if(!m_weightedMean.is_initialized())
-	{
-		m_proceduralSampling.weightedMean(m_weightedMean, image->get_width(), image->get_height(), m_meanAccuracy);
-	}
+						"height must be set first.");
 	unsigned int index = 0;
 	if(m_textureTypeFlag & ALBEDO)
 	{
@@ -181,26 +135,14 @@ void TextureSynthesizer::spatiallyVaryingMeanToHeight(Ref<Image> image)
 	{
 		index += 3;
 	}
-	m_weightedMean.toImageIndexed(image, index);
+	m_outputImageVector.toImageIndexed(image, index);
 	return;
 }
 
-void TextureSynthesizer::spatiallyVaryingMeanToRoughness(Ref<Image> image)
+void TextureSynthesizer::outputToRoughness(Ref<Image> image)
 {
 	ERR_FAIL_COND_MSG(!(m_textureTypeFlag & ROUGHNESS),
-					  "roughness must be set with set_roughness first.");
-	ERR_FAIL_COND_MSG(m_proceduralSampling.sampler() == nullptr,
-					  "the sampler must be activated first (either with computeAutocovarianceSampler or set_cyclostationaryPeriods).");
-	if(!m_exemplar.is_initialized())
-	{
-		computeImageVector();
-	}
-	ERR_FAIL_COND_MSG(!m_proceduralSampling.exemplarPtr() || !m_proceduralSampling.exemplarPtr()->is_initialized(),
-					  "roughness must be set with set_roughness first.");
-	if(!m_weightedMean.is_initialized())
-	{
-		m_proceduralSampling.weightedMean(m_weightedMean, image->get_width(), image->get_height(), m_meanAccuracy);
-	}
+						"roughness must be set first.");
 	unsigned int index = 0;
 	if(m_textureTypeFlag & ALBEDO)
 	{
@@ -214,26 +156,14 @@ void TextureSynthesizer::spatiallyVaryingMeanToRoughness(Ref<Image> image)
 	{
 		index += 1;
 	}
-	m_weightedMean.toImageIndexed(image, index);
+	m_outputImageVector.toImageIndexed(image, index);
 	return;
 }
 
-void TextureSynthesizer::spatiallyVaryingMeanToMetallic(Ref<Image> image)
+void TextureSynthesizer::outputToMetallic(Ref<Image> image)
 {
 	ERR_FAIL_COND_MSG(!(m_textureTypeFlag & METALLIC),
-					  "metallic must be set with set_metallic first.");
-	ERR_FAIL_COND_MSG(m_proceduralSampling.sampler() == nullptr,
-					  "the sampler must be activated first (either with computeAutocovarianceSampler or set_cyclostationaryPeriods).");
-	if(!m_exemplar.is_initialized())
-	{
-		computeImageVector();
-	}
-	ERR_FAIL_COND_MSG(!m_proceduralSampling.exemplarPtr() || !m_proceduralSampling.exemplarPtr()->is_initialized(),
-					  "metallic must be set with set_metallic first.");
-	if(!m_weightedMean.is_initialized())
-	{
-		m_proceduralSampling.weightedMean(m_weightedMean, image->get_width(), image->get_height(), m_meanAccuracy);
-	}
+						"metallic must be set first.");
 	unsigned int index = 0;
 	if(m_textureTypeFlag & ALBEDO)
 	{
@@ -251,26 +181,14 @@ void TextureSynthesizer::spatiallyVaryingMeanToMetallic(Ref<Image> image)
 	{
 		index += 1;
 	}
-	m_weightedMean.toImageIndexed(image, index);
+	m_outputImageVector.toImageIndexed(image, index);
 	return;
 }
 
-void TextureSynthesizer::spatiallyVaryingMeanToAO(Ref<Image> image)
+void TextureSynthesizer::outputToAO(Ref<Image> image)
 {
 	ERR_FAIL_COND_MSG(!(m_textureTypeFlag & AMBIENT_OCCLUSION),
-					  "ambient occlusion must be set with set_ao first.");
-	ERR_FAIL_COND_MSG(m_proceduralSampling.sampler() == nullptr,
-					  "the sampler must be activated first (either with computeAutocovarianceSampler or set_cyclostationaryPeriods).");
-	if(!m_exemplar.is_initialized())
-	{
-		computeImageVector();
-	}
-	ERR_FAIL_COND_MSG(!m_proceduralSampling.exemplarPtr() || !m_proceduralSampling.exemplarPtr()->is_initialized(),
-					  "ambient occlusion must be set with set_ao first.");
-	if(!m_weightedMean.is_initialized())
-	{
-		m_proceduralSampling.weightedMean(m_weightedMean, image->get_width(), image->get_height(), m_meanAccuracy);
-	}
+						"ambient occlusion must be set first.");
 	unsigned int index = 0;
 	if(m_textureTypeFlag & ALBEDO)
 	{
@@ -292,39 +210,70 @@ void TextureSynthesizer::spatiallyVaryingMeanToAO(Ref<Image> image)
 	{
 		index += 1;
 	}
-	m_weightedMean.toImageIndexed(image, index);
+	m_outputImageVector.toImageIndexed(image, index);
 	return;
 }
 
-void TextureSynthesizer::spatiallyVaryingMeanToComponent(TextureTypeFlag type, Ref<Image> image)
+void TextureSynthesizer::outputToComponent(TextureTypeFlag type, Ref<Image> image)
 {
+	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
+	ERR_FAIL_COND_MSG(!m_outputImageVector.is_initialized(),
+						"an output must be computed before calling outputToComponent.");
+	Ref<Image> tmpResultRef;
+	tmpResultRef = Image::create_empty(m_outputImageVector.get_width(), m_outputImageVector.get_height(), false, Image::FORMAT_RGBF);
 	switch(type)
 	{
 		case ALBEDO:
-			spatiallyVaryingMeanToAlbedo(image);
+			outputToAlbedo(tmpResultRef);
 			break;
 		case NORMAL:
-			spatiallyVaryingMeanToNormal(image);
+			outputToNormal(tmpResultRef);
 			break;
 		case HEIGHT:
-			spatiallyVaryingMeanToHeight(image);
+			outputToHeight(tmpResultRef);
 			break;
 		case ROUGHNESS:
-			spatiallyVaryingMeanToRoughness(image);
+			outputToRoughness(tmpResultRef);
 			break;
 		case METALLIC:
-			spatiallyVaryingMeanToMetallic(image);
+			outputToMetallic(tmpResultRef);
 			break;
 		case AMBIENT_OCCLUSION:
-			spatiallyVaryingMeanToAO(image);
+			outputToAO(tmpResultRef);
 			break;
 		default:
 			ERR_FAIL_MSG("Component not supported yet.");
 			break;
 	}
+	image->copy_from(tmpResultRef);
 }
 
-void TextureSynthesizer::set_cyclostationaryPeriods(Vector2 t0, Vector2 t1)
+void TextureSynthesizer::_bind_methods()
+{
+	BIND_ENUM_CONSTANT(ALBEDO);
+	BIND_ENUM_CONSTANT(NORMAL);
+	BIND_ENUM_CONSTANT(HEIGHT);
+	BIND_ENUM_CONSTANT(ROUGHNESS);
+	BIND_ENUM_CONSTANT(METALLIC);
+	BIND_ENUM_CONSTANT(AMBIENT_OCCLUSION);
+	BIND_ENUM_CONSTANT(SPECULAR);
+	BIND_ENUM_CONSTANT(ALPHA);
+	BIND_ENUM_CONSTANT(RIM);
+
+	ClassDB::bind_method(D_METHOD("set_component", "component", "image"), &TextureSynthesizer::set_component);
+	ClassDB::bind_method(D_METHOD("outputToComponent", "component", "image"), &TextureSynthesizer::outputToComponent);
+}
+
+SamplerTextureSynthesizer::SamplerTextureSynthesizer() : 
+TextureSynthesizer(),
+m_proceduralSampling(),
+m_meanAccuracy(512),
+m_meanSize(512)
+{
+	m_proceduralSampling.set_exemplar(&m_exemplar);
+}
+
+void SamplerTextureSynthesizer::set_cyclostationaryPeriods(Vector2 t0, Vector2 t1)
 {
 	TexSyn::SamplerPeriods *sampler = memnew(TexSyn::SamplerPeriods(0));
 	sampler->setPeriods(t0, t1);
@@ -332,45 +281,60 @@ void TextureSynthesizer::set_cyclostationaryPeriods(Vector2 t0, Vector2 t1)
 	return;
 }
 
-void TextureSynthesizer::set_importancePDF(Ref<Image> image)
+void SamplerTextureSynthesizer::set_importancePDF(Ref<Image> image)
 {
 	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
 	ERR_FAIL_COND_MSG(image->is_empty(), "image must not be empty.");
-	TexSyn::ImageScalar<float> pdf;
+	ImageScalarType pdf;
 	pdf.fromImage(image);
 	TexSyn::SamplerImportance *sampler = memnew(TexSyn::SamplerImportance(pdf, 0));
 	m_proceduralSampling.set_sampler(sampler);
 	return;
 }
 
-void TextureSynthesizer::set_meanAccuracy(unsigned int accuracy)
+void SamplerTextureSynthesizer::set_meanAccuracy(unsigned int accuracy)
 {
+	ERR_FAIL_COND_MSG(accuracy == 0, "accuracy must be greater than 0.");
 	m_meanAccuracy = accuracy;
 }
 
-void TextureSynthesizer::set_meanSize(unsigned int meanSize)
+void SamplerTextureSynthesizer::set_meanSize(unsigned int meanSize)
 {
+	ERR_FAIL_COND_MSG(meanSize == 0, "mean size must be greater than 0.");
 	m_meanSize = meanSize;
 }
 
-void TextureSynthesizer::computeAutocovarianceSampler()
+void SamplerTextureSynthesizer::computeWeightedMean()
 {
-	TexSyn::ImageVector<float> imagePCA;
+	ERR_FAIL_COND_MSG(m_proceduralSampling.sampler() == nullptr,
+					  "the sampler must be activated first (either with computeAutocovarianceSampler or set_cyclostationaryPeriods).");
+	if(!m_exemplar.is_initialized())
+	{
+		computeImageVector();
+	}
+	ERR_FAIL_COND_MSG(!m_proceduralSampling.exemplarPtr() || !m_proceduralSampling.exemplarPtr()->is_initialized(),
+					  "normal must be set with set_normal first.");
+	m_proceduralSampling.computeWeightedMean(m_outputImageVector, m_exemplar.get_width(), m_exemplar.get_height(), m_meanAccuracy);
+}
+
+void SamplerTextureSynthesizer::computeAutocovarianceSampler()
+{
+	ImageVectorType imagePCA;
 	if(!m_exemplar.is_initialized())
 		computeImageVector();
 	TexSyn::PCA<float> pca(m_exemplar);
 	pca.computePCA(1);
 	imagePCA.init(m_exemplar.get_width(), m_exemplar.get_height(), 1);
 	pca.project(imagePCA);
-	TexSyn::ImageScalar<float> imagePCScalar = imagePCA.get_image(0);
+	ImageScalarType imagePCScalar = imagePCA.get_image(0);
 	TexSyn::StatisticsScalar<float> statistics(imagePCScalar);
-	const TexSyn::ImageScalar<float> &imageAutocovariance = statistics.get_autocovariance(true);
+	const ImageScalarType &imageAutocovariance = statistics.get_autocovariance(true);
 	TexSyn::SamplerImportance *sampler = memnew(TexSyn::SamplerImportance(imageAutocovariance, 0));
 	m_proceduralSampling.set_sampler(sampler);
 	return;
 }
 
-void TextureSynthesizer::samplerPdfToImage(Ref<Image> image)
+void SamplerTextureSynthesizer::samplerPdfToImage(Ref<Image> image)
 {
 	ERR_FAIL_COND_MSG(!image->is_empty(), "image must be empty.");
 	const TexSyn::SamplerImportance *si = dynamic_cast<const TexSyn::SamplerImportance *>(m_proceduralSampling.sampler());
@@ -382,19 +346,19 @@ void TextureSynthesizer::samplerPdfToImage(Ref<Image> image)
 	return;
 }
 
-void TextureSynthesizer::samplerRealizationToImage(Ref<Image> image, unsigned int size)
+void SamplerTextureSynthesizer::samplerRealizationToImage(Ref<Image> image, unsigned int size)
 {
 	ERR_FAIL_COND_MSG(!image->is_empty(), "image must be empty.");
 	Ref<Image> refRealization;
 	refRealization = Image::create_empty(size, 1, false, Image::FORMAT_RGF);
-	TexSyn::ImageVector<float> realization;
+	ImageVectorType realization;
 	m_proceduralSampling.preComputeSamplerRealization(realization, size);
 	realization.toImage(refRealization);
 	image->copy_from(refRealization);
 	return;
 }
 
-void TextureSynthesizer::centerExemplar(Ref<Image> exemplar, Ref<Image> mean)
+void SamplerTextureSynthesizer::centerExemplar(Ref<Image> exemplar, Ref<Image> mean)
 {
 	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
 	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
@@ -403,7 +367,7 @@ void TextureSynthesizer::centerExemplar(Ref<Image> exemplar, Ref<Image> mean)
 	Ref<Image> refMean;
 	refMean = Image::create_from_data(mean->get_width(), mean->get_height(), false, mean->get_format(), mean->get_data());
 	refMean->resize(exemplar->get_width(), exemplar->get_height(), Image::INTERPOLATE_CUBIC);
-	TexSyn::ImageVector<float> meanImageVector, exemplarImageVector;
+	ImageVectorType meanImageVector, exemplarImageVector;
 	meanImageVector.fromImage(refMean);
 	exemplarImageVector.fromImage(exemplar);
 	ERR_FAIL_COND_MSG(meanImageVector.get_nbDimensions() != exemplarImageVector.get_nbDimensions(), "exemplar and mean must have the same number of dimensions.");
@@ -412,453 +376,23 @@ void TextureSynthesizer::centerExemplar(Ref<Image> exemplar, Ref<Image> mean)
 	return;
 }
 
-void TextureSynthesizer::test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef)
+void SamplerTextureSynthesizer::_bind_methods()
 {
-	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
-	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
-	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
-	ERR_FAIL_COND_MSG(regions->is_empty(), "regions must not be empty.");
-	ERR_FAIL_COND_MSG(fgbgmap.is_null(), "fgbgmap must not be null.");
-	ERR_FAIL_COND_MSG(fgbgmap->is_empty(), "fgbgmap must not be empty.");
-	ERR_FAIL_COND_MSG(resultRef.is_null(), "debugResult must not be null.");
-	ERR_FAIL_COND_MSG(!resultRef->is_empty(), "fgbgmap must be empty.");
-	
-	//creating the id map with integers from regions
-	using ImageRegionType = TexSyn::ImageScalar<int>;
-	using MapType = HashMap<Color, int>;
-	ImageRegionType regionsInt;
-	MapType histogramRegions;
-	regionsInt.init(exemplar->get_width(), exemplar->get_height(), true);
-	int id = 1;
-	regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
-	{
-		Color c = regions->get_pixel(x, y);
-		if(c.is_equal_approx(Color(1, 1, 1)))
-		{
-			pix = 0;
-		}
-		else
-		{
-			MapType::Iterator it = histogramRegions.find(c);
-			if(it != histogramRegions.end())
-			{
-				pix = it->value;
-			}
-			else
-			{
-				MapType::Iterator it2 = histogramRegions.insert(c, id);
-				++id;
-				pix = it2->value;
-			}
-		}
-	});
-	
-	TexSyn::ColorSynthesisPrototype csp;
-	TexSyn::GaussianTransfer gst;
-
-	TexSyn::ImageVector<double> exemplarIV;
-	exemplarIV.fromImage(exemplar);
-	csp.setExemplar(exemplarIV);
-	
-	TexSyn::ImageVector<double> Tinv;
-	TexSyn::ImageVector<double> TG;
-	Tinv.init(128, id, exemplarIV.get_nbDimensions(), true);
-	TG.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
-	gst.computeTinputRegions(exemplarIV, regionsInt, TG, false, false);
-	gst.computeinvTRegions(exemplarIV, regionsInt, Tinv, false);
-	//TexSyn::GaussianTransfer::invTMultipleRegions(exemplarIV, Tinv, regionsInt);
-	
-	RandomNumberGenerator rng;
-	
-	Ref<Image> tmpResultRef;
-	tmpResultRef = Image::create_empty(exemplarIV.get_width(), exemplarIV.get_height(), false, Image::FORMAT_RGBF);
-	TexSyn::ImageVector<double> result;
-	result.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
-	result.get_image(0).for_all_pixels([&] (TexSyn::ImageVector<double>::DataType &pix, int x, int y)
-	{
-		int region = regionsInt.get_pixel(x, y);
-		if(region != 0)
-		{
-			TexSyn::ImageVector<double>::VectorType p = TG.get_pixel(x, y);
-			rng.set_seed(region);
-			int regionSubstitute = rng.randi_range(1, id-1);
-			gst.invTRegions(p, Tinv, regionSubstitute);
-			result.set_pixel(x, y, p);
-		}
-		else
-		{
-			TexSyn::ImageVector<double>::VectorType p = TG.get_pixel(x, y);
-			gst.invTRegions(p, Tinv, 0);
-			result.set_pixel(x, y, p);
-		}
-	});
-
-//	result.get_image(0).for_all_pixels([&] (TexSyn::ImageVector<double>::DataType &pix, int x, int y)
-//	{
-//		int region = regionsInt.get_pixel(x, y);
-//		if(region != 0 || region == 0)
-//		{
-//			TexSyn::ImageVector<double>::VectorType p = TG.get_pixel(x, y);
-//			gst.invTMultipleRegions(p, Tinv, region);
-//			result.set_pixel(x, y, p);
-//		}
-//	});
-	
-	result.toImageIndexed(tmpResultRef, 0);
-	resultRef->copy_from(tmpResultRef);
-	
-	if(!debugDataRef.is_null())
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(TG.get_width(), TG.get_height(), false, Image::FORMAT_RGBF);
-		TG.toImageIndexed(tmpResultRef, 0);
-		debugDataRef->copy_from(tmpResultRef);
-	}
-	return;
-}
-
-void TextureSynthesizer::precomputeLocallyStationary(	Ref<Image> exemplar, Ref<Image> regions, Ref<Image> gaussianOutputRef, 
-														Ref<Image> invTRef, Ref<Image> regionsOutputRef, Ref<Image> originsRef, 
-														Ref<Texture2DArray> invTFilteredRef)
-{
-	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
-	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
-	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
-	ERR_FAIL_COND_MSG(regions->is_empty(), "regions must not be empty.");
-	ERR_FAIL_COND_MSG(gaussianOutputRef.is_null(), "debugResult must not be null.");
-	ERR_FAIL_COND_MSG(!gaussianOutputRef->is_empty(), "fgbgmap must be empty.");
-	
-	//creating the id map with integers from regions
-	using ImageRegionType = TexSyn::ImageScalar<int>;
-	using MapType = HashMap<Color, int>;
-	ImageRegionType regionsInt;
-	MapType histogramRegions;
-	regionsInt.init(exemplar->get_width(), exemplar->get_height(), true);
-	int id = 1;
-	regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
-	{
-		Color c = regions->get_pixel(x, y);
-		if(c.is_equal_approx(Color(1, 1, 1)))
-		{
-			pix = 0;
-		}
-		else
-		{
-			MapType::Iterator it = histogramRegions.find(c);
-			if(it != histogramRegions.end())
-			{
-				pix = it->value;
-			}
-			else
-			{
-				MapType::Iterator it2 = histogramRegions.insert(c, id);
-				++id;
-				pix = it2->value;
-			}
-		}
-	});
-	
-	
-	//Constructing the origins of each region for seeding in the shader
-	TexSyn::ImageVector<float> imageOrigins;
-	imageOrigins.init(id, 1, 2);
-	for(int otherID=0; otherID<id; ++otherID)
-	{
-		float dx = 0.0, dy = 0.0;
-		int maxX=0, maxY=0, minX=regionsInt.get_width()-1, minY=regionsInt.get_height()-1;
-		regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
-		{
-			if(pix == otherID)
-			{
-				maxX = std::max(maxX, x);
-				maxY = std::max(maxY, y);
-				minX = std::min(minX, x);
-				minY = std::min(minY, y);
-			}
-		});
-		if(maxX == regionsInt.get_width()-1 && minX == 0)
-		{
-			dx = 0.5;
-		}
-		if(maxY == regionsInt.get_width()-1 && minY == 0)
-		{
-			dy = 0.5;
-		}
-		imageOrigins.set_pixel(otherID, 0, 0, dx);
-		imageOrigins.set_pixel(otherID, 0, 1, dy);
-	}
-	
-	
-	TexSyn::ColorSynthesisPrototype csp;
-	TexSyn::GaussianTransfer gst;
-
-	TexSyn::ImageVector<double> exemplarIV;
-	exemplarIV.fromImage(exemplar);
-	csp.setExemplar(exemplarIV);
-	
-	TexSyn::ImageVector<double> TG;
-	TG.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
-	gst.computeTinputRegions(exemplarIV, regionsInt, TG, false, false);
-	
-	//computing the filtered LUT
-	TexSyn::MipmapMultiIDMap mipmapMultiIDMap;
-	TexSyn::MipmapMultiIDMap::ImageMultiIDMapType multiIdMap;
-	gst.toMultipleRegions(multiIdMap, regionsInt);
-	mipmapMultiIDMap.setIDMap(multiIdMap);
-	mipmapMultiIDMap.computeMipmap();
-	mipmapMultiIDMap.upsizeMipmap();
-	
-	TexSyn::Mipmap mipmapExemplar;
-	mipmapExemplar.setTexture(exemplarIV);
-	mipmapExemplar.computeMipmap();
-	mipmapExemplar.upsizeMipmap();
-	
-	TexSyn::ImageVector<double> Tinv;
-	Tinv.init(128, id, TG.get_nbDimensions(), true);
-	gst.computeinvTRegions(exemplarIV, regionsInt, Tinv);
-	
-	//Computing the pre-filtered LUTs
-	LocalVector<TexSyn::ImageVector<double>> TinvVector;
-	
-	Vector<Ref<Image>> TinvVectorRef;
-	TinvVectorRef.resize(mipmapMultiIDMap.nbMaps());
-	
-	for(int i=0; i<mipmapMultiIDMap.nbMaps(); ++i)
-	{
-		TexSyn::ImageVector<double> Tinv;
-		Tinv.init(128, id, mipmapExemplar.mipmap(i).get_nbDimensions(), true);
-		gst.computeinvTMultipleRegions(mipmapExemplar.mipmap(i), mipmapMultiIDMap.mipmap(i), Tinv, false);
-		TinvVector.push_back(Tinv);
-		Ref<Image> tmpResultRef = Image::create_empty(Tinv.get_width(), Tinv.get_height(), false, Image::FORMAT_RGBF);
-		Tinv.toImageIndexed(tmpResultRef, 0);
-		TinvVectorRef.write[i].instantiate();
-		TinvVectorRef.write[i]->copy_from(tmpResultRef);
-		TinvVectorRef.write[i]->save_png(String("invTRef_num.png").replace("num", String::num_int64(i)));
-	}
-	
-	invTFilteredRef->create_from_images(TinvVectorRef);
-	
-	TexSyn::ImageScalar<double> regionsOutput;
-	regionsOutput.init(regions->get_width(), regions->get_height(), true);
-	regionsOutput.for_all_pixels([&] (double & pix, int x, int y)
-	{
-		int region = regionsInt.get_pixel(x, y);
-		pix = float(region)/(id-1);
-	});
-	
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(Tinv.get_width(), Tinv.get_height(), false, Image::FORMAT_RGBF);
-		Tinv.toImageIndexed(tmpResultRef, 0);
-		invTRef->copy_from(tmpResultRef);
-	}
-	
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(TG.get_width(), TG.get_height(), false, Image::FORMAT_RGBF);
-		TG.toImageIndexed(tmpResultRef, 0);
-		gaussianOutputRef->copy_from(tmpResultRef);
-	}
-	
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(regionsOutput.get_width(), regionsOutput.get_height(), false, Image::FORMAT_RF);
-		regionsOutput.toImage(tmpResultRef, 0);
-		regionsOutputRef->copy_from(tmpResultRef);
-	}
-	
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(imageOrigins.get_width(), imageOrigins.get_height(), false, Image::FORMAT_RGF);
-		imageOrigins.toImageIndexed(tmpResultRef, 0);
-		originsRef->copy_from(tmpResultRef);
-	}
-	
-	return;
-}
-
-void TextureSynthesizer::precomputeLocalPCA(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> pcaOutputRef, Ref<Image> invPCARef, 
-											Ref<Image> regionsOutputRef, Ref<Image> originsRef)
-{
-	ERR_FAIL_COND_MSG(exemplar.is_null(), "exemplar must not be null.");
-	ERR_FAIL_COND_MSG(exemplar->is_empty(), "exemplar must not be empty.");
-	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
-	ERR_FAIL_COND_MSG(regions->is_empty(), "regions must not be empty.");
-	ERR_FAIL_COND_MSG(pcaOutputRef.is_null(), "debugResult must not be null.");
-	ERR_FAIL_COND_MSG(!pcaOutputRef->is_empty(), "fgbgmap must be empty.");
-	
-	//creating the id map with integers from regions
-	using ImageRegionType = TexSyn::ImageScalar<int>;
-	using MapType = HashMap<Color, int>;
-	ImageRegionType regionsInt;
-	MapType histogramRegions;
-	regionsInt.init(exemplar->get_width(), exemplar->get_height(), true);
-	int id = 1;
-	regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
-	{
-		Color c = regions->get_pixel(x, y);
-		if(c.is_equal_approx(Color(1, 1, 1)))
-		{
-			pix = 0;
-		}
-		else
-		{
-			MapType::Iterator it = histogramRegions.find(c);
-			if(it != histogramRegions.end())
-			{
-				pix = it->value;
-			}
-			else
-			{
-				MapType::Iterator it2 = histogramRegions.insert(c, id);
-				++id;
-				pix = it2->value;
-			}
-		}
-	});
-	
-	
-	//Constructing the origins of each region for seeding in the shader
-	TexSyn::ImageVector<float> imageOrigins;
-	imageOrigins.init(id, 1, 2);
-	for(int otherID=0; otherID<id; ++otherID)
-	{
-		float dx = 0.0, dy = 0.0;
-		int maxX=0, maxY=0, minX=regionsInt.get_width()-1, minY=regionsInt.get_height()-1;
-		regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
-		{
-			if(pix == otherID)
-			{
-				maxX = std::max(maxX, x);
-				maxY = std::max(maxY, y);
-				minX = std::min(minX, x);
-				minY = std::min(minY, y);
-			}
-		});
-		if(maxX == regionsInt.get_width()-1 && minX == 0)
-		{
-			dx = 0.5;
-		}
-		if(maxY == regionsInt.get_width()-1 && minY == 0)
-		{
-			dy = 0.5;
-		}
-		imageOrigins.set_pixel(otherID, 0, 0, dx);
-		imageOrigins.set_pixel(otherID, 0, 1, dy);
-	}
-	
-	
-	TexSyn::ColorSynthesisPrototype csp;
-	TexSyn::GaussianTransfer gst;
-
-	TexSyn::ImageVector<double> exemplarIV;
-	exemplarIV.fromImage(exemplar);
-	csp.setExemplar(exemplarIV);
-	
-	//computing the pre-filtered LUT
-	TexSyn::MipmapMultiIDMap mipmapMultiIDMap;
-	TexSyn::MipmapMultiIDMap::ImageMultiIDMapType multiIdMap;
-	gst.toMultipleRegions(multiIdMap, regionsInt);
-	mipmapMultiIDMap.setIDMap(multiIdMap);
-	mipmapMultiIDMap.computeMipmap();
-	mipmapMultiIDMap.upsizeMipmap();
-	
-	//generating the mipmap of the exemplar
-	TexSyn::Mipmap mipmapExemplar;
-	mipmapExemplar.setTexture(exemplarIV);
-	mipmapExemplar.computeMipmap();
-	mipmapExemplar.upsizeMipmap();
-	
-	//computing local PCAs, projected exemplar, and packing inverse PCA infos
-	TexSyn::ImageVector<double> PCAOutput;
-	PCAOutput.init(exemplarIV.get_width(), exemplarIV.get_height(), exemplarIV.get_nbDimensions(), true);
-	using PCAType = TexSyn::PCA<double>;
-	LocalVector<PCAType> localPCAs;
-	TexSyn::ImageVector<double> invPCA;
-	invPCA.init(1+exemplarIV.get_nbDimensions(), id, exemplarIV.get_nbDimensions(), true);
-	for(int i=0; i<id; ++i)
-	{
-		localPCAs.push_back(PCAType(exemplarIV, multiIdMap, uint64_t(i)));
-		localPCAs[i].computePCA();
-		localPCAs[i].project(PCAOutput);
-		PCAType::MatrixType localEigenVectors = localPCAs[i].get_eigenVectors();
-		PCAType::VectorType localMean = localPCAs[i].get_mean();
-		//filling invPCA: at x=0, mean, and then eigen vectors
-		for(unsigned int d=0; d<exemplarIV.get_nbDimensions(); ++d)
-		{
-			invPCA.set_pixel(0, i, d, localMean[d]);
-			for(int r=0; r<localEigenVectors.rows(); ++r)
-			{
-				invPCA.set_pixel(r+1, i, d, localEigenVectors(r, d));
-			}
-		}
-	}
-	//In order to save in .png, add 0.5
-	PCAOutput.for_all_images([&] (TexSyn::ImageVector<double>::ImageScalarType &image, unsigned int d)
-	{
-		image.for_all_pixels([&] (TexSyn::ImageVector<double>::ImageScalarType::DataType &pix)
-		{
-			pix += 0.5;
-		});
-	});
-	
-	Vector<Ref<Image>> TinvVectorRef;
-	TinvVectorRef.resize(mipmapMultiIDMap.nbMaps());
-	
-//	for(int i=0; i<mipmapMultiIDMap.nbMaps(); ++i)
-//	{
-//		TexSyn::ImageVector<double> Tinv;
-//		Tinv.init(128, id, mipmapExemplar.mipmap(i).get_nbDimensions(), true);
-//		gst.computeinvTMultipleRegions(mipmapExemplar.mipmap(i), mipmapMultiIDMap.mipmap(i), Tinv, false);
-//		TinvVector.push_back(Tinv);
-//		Ref<Image> tmpResultRef = Image::create_empty(Tinv.get_width(), Tinv.get_height(), false, Image::FORMAT_RGBF);
-//		Tinv.toImageIndexed(tmpResultRef, 0);
-//		TinvVectorRef.write[i].instantiate();
-//		TinvVectorRef.write[i]->copy_from(tmpResultRef);
-//		TinvVectorRef.write[i]->save_png(String("invTRef_num.png").replace("num", String::num_int64(i)));
-//	}
-	
-	TexSyn::ImageScalar<double> regionsOutput;
-	regionsOutput.init(regions->get_width(), regions->get_height(), true);
-	regionsOutput.for_all_pixels([&] (double & pix, int x, int y)
-	{
-		int region = regionsInt.get_pixel(x, y);
-		pix = float(region)/(id-1);
-	});
-	
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(invPCA.get_width(), invPCA.get_height(), false, Image::FORMAT_RGBF);
-		invPCA.toImageIndexed(tmpResultRef, 0);
-		invPCARef->copy_from(tmpResultRef);
-	}
-	
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(PCAOutput.get_width(), PCAOutput.get_height(), false, Image::FORMAT_RGBF);
-		PCAOutput.toImageIndexed(tmpResultRef, 0);
-		pcaOutputRef->copy_from(tmpResultRef);
-	}
-	
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(regionsOutput.get_width(), regionsOutput.get_height(), false, Image::FORMAT_RF);
-		regionsOutput.toImage(tmpResultRef, 0);
-		regionsOutputRef->copy_from(tmpResultRef);
-	}
-	
-	{
-		Ref<Image> tmpResultRef;
-		tmpResultRef = Image::create_empty(imageOrigins.get_width(), imageOrigins.get_height(), false, Image::FORMAT_RGF);
-		imageOrigins.toImageIndexed(tmpResultRef, 0);
-		originsRef->copy_from(tmpResultRef);
-	}
-	
-	return;
+	ClassDB::bind_method(D_METHOD("set_cyclostationaryPeriods", "t0", "t1"), &SamplerTextureSynthesizer::set_cyclostationaryPeriods);
+	ClassDB::bind_method(D_METHOD("set_importancePDF", "image"), &SamplerTextureSynthesizer::set_importancePDF);
+	ClassDB::bind_method(D_METHOD("set_meanAccuracy", "accuracy"), &SamplerTextureSynthesizer::set_meanAccuracy);
+	ClassDB::bind_method(D_METHOD("set_meanSize", "size"), &SamplerTextureSynthesizer::set_meanSize);
+	ClassDB::bind_method(D_METHOD("samplerRealizationToImage", "image", "size"), &SamplerTextureSynthesizer::samplerRealizationToImage, DEFVAL(4096));
+	ClassDB::bind_method(D_METHOD("centerExemplar", "exemplar", "mean"), &SamplerTextureSynthesizer::centerExemplar);
+	ClassDB::bind_method(D_METHOD("computeAutocovarianceSampler"), &SamplerTextureSynthesizer::computeAutocovarianceSampler);
+	ClassDB::bind_method(D_METHOD("samplerPdfToImage", "image"), &SamplerTextureSynthesizer::samplerPdfToImage);
+	ClassDB::bind_method(D_METHOD("computeWeightedMean"), &SamplerTextureSynthesizer::computeWeightedMean);
 }
 
 void TextureSynthesizer::computeImageVector()
 {
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(),
+						"Texture components must be set first with set_component.");
 	unsigned int nbDimensions = 0;
 	unsigned int width=0, height=0;
 	auto addDimensions = [&nbDimensions, &width, &height, this] (int flag, int nbDimensionsExpected)
@@ -910,33 +444,253 @@ void TextureSynthesizer::computeImageVector()
 	return;
 }
 
-void TextureSynthesizer::_bind_methods()
+
+
+LocallyStationaryTextureSynthesizer::LocallyStationaryTextureSynthesizer() :
+TextureSynthesizer(),
+m_nbRegions(0),
+m_regionsInt(),
+m_multiIdMap(),
+m_gst(),
+m_invT(),
+m_TG(),
+m_exemplarPCA(),
+m_invPCA()
+{}
+
+void LocallyStationaryTextureSynthesizer::setRegionMap(Ref<Image> regions)
 {
-	BIND_ENUM_CONSTANT(ALBEDO);
-	BIND_ENUM_CONSTANT(NORMAL);
-	BIND_ENUM_CONSTANT(HEIGHT);
-	BIND_ENUM_CONSTANT(ROUGHNESS);
-	BIND_ENUM_CONSTANT(METALLIC);
-	BIND_ENUM_CONSTANT(AMBIENT_OCCLUSION);
-	BIND_ENUM_CONSTANT(SPECULAR);
-	BIND_ENUM_CONSTANT(ALPHA);
-	BIND_ENUM_CONSTANT(RIM);
+	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
 
-	ClassDB::bind_method(D_METHOD("set_component", "component", "image"), &TextureSynthesizer::set_component);
-
-	ClassDB::bind_method(D_METHOD("spatiallyVaryingMeanToComponent", "component", "image"), &TextureSynthesizer::spatiallyVaryingMeanToComponent);
-
-	ClassDB::bind_method(D_METHOD("set_cyclostationaryPeriods", "t0", "t1"), &TextureSynthesizer::set_cyclostationaryPeriods);
-	ClassDB::bind_method(D_METHOD("set_importancePDF", "image"), &TextureSynthesizer::set_importancePDF);
-	ClassDB::bind_method(D_METHOD("set_meanAccuracy", "accuracy"), &TextureSynthesizer::set_meanAccuracy);
-	ClassDB::bind_method(D_METHOD("set_meanSize", "size"), &TextureSynthesizer::set_meanSize);
-	ClassDB::bind_method(D_METHOD("samplerRealizationToImage", "image", "size"), &TextureSynthesizer::samplerRealizationToImage, DEFVAL(4096));
-	ClassDB::bind_method(D_METHOD("centerExemplar", "exemplar", "mean"), &TextureSynthesizer::centerExemplar);
-	ClassDB::bind_method(D_METHOD("computeAutocovarianceSampler"), &TextureSynthesizer::computeAutocovarianceSampler);
-	ClassDB::bind_method(D_METHOD("samplerPdfToImage", "image"), &TextureSynthesizer::samplerPdfToImage);
+	//collecting all the ids
+	using MapType = HashMap<Color, int>;
+	MapType histogramRegions;
+	m_regionsInt.init(regions->get_width(), regions->get_height(), true);
+	m_nbRegions = 1;
+	m_regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
+	{
+		Color c = regions->get_pixel(x, y);
+		if(c.is_equal_approx(Color(1, 1, 1)))
+		{
+			pix = 0;
+		}
+		else
+		{
+			MapType::Iterator it = histogramRegions.find(c);
+			if(it != histogramRegions.end())
+			{
+				pix = it->value;
+			}
+			else
+			{
+				MapType::Iterator it2 = histogramRegions.insert(c, m_nbRegions);
+				++m_nbRegions;
+				pix = it2->value;
+			}
+		}
+	});
 	
-	ClassDB::bind_method(D_METHOD("test_colorSynthesisPrototype", "exemplar", "regions", "fgbgmap", "result", "debug"), &TextureSynthesizer::test_colorSynthesisPrototype);
+	//Pre-computing the region mask bitmask version
+	TexSyn::GaussianTransfer::toMultipleRegions(m_multiIdMap, m_regionsInt);
+}
 
-	ClassDB::bind_method(D_METHOD("precomputeLocallyStationary", "exemplar", "regions", "gaussianOutput", "invT", "regionsOutput", "originsRef", "invTFiltered"), &TextureSynthesizer::precomputeLocallyStationary);
-	ClassDB::bind_method(D_METHOD("precomputeLocalPCA", "exemplar", "regions", "PCAOutput", "invPCA", "regionsOutput", "originsRef"), &TextureSynthesizer::precomputeLocalPCA);
+void LocallyStationaryTextureSynthesizer::originsMapToImage(Ref<Image> origins)
+{
+	ERR_FAIL_COND_MSG(origins.is_null(), "origins must not be null.");
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	ImageVectorType imageVectorOrigins;
+	imageVectorOrigins.init(m_nbRegions, 1, 2);
+	for(unsigned int otherID=0; otherID<m_nbRegions; ++otherID)
+	{
+		float dx = 0.0, dy = 0.0;
+		int maxX=0, maxY=0, minX=m_regionsInt.get_width()-1, minY=m_regionsInt.get_height()-1;
+		m_regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
+		{
+			if(pix == otherID)
+			{
+				maxX = std::max(maxX, x);
+				maxY = std::max(maxY, y);
+				minX = std::min(minX, x);
+				minY = std::min(minY, y);
+			}
+		});
+		if(maxX == m_regionsInt.get_width()-1 && minX == 0)
+		{
+			dx = 0.5;
+		}
+		if(maxY == m_regionsInt.get_width()-1 && minY == 0)
+		{
+			dy = 0.5;
+		}
+		imageVectorOrigins.set_pixel(otherID, 0, 0, dx);
+		imageVectorOrigins.set_pixel(otherID, 0, 1, dy);
+	}
+	
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(imageVectorOrigins.get_width(), imageVectorOrigins.get_height(), false, Image::FORMAT_RGF);
+		imageVectorOrigins.toImageIndexed(tmpResultRef, 0);
+		origins->copy_from(tmpResultRef);
+	}
+}
+
+void LocallyStationaryTextureSynthesizer::simplifiedRegionMapToImage(Ref<Image> regionsSimplified)
+{
+	ERR_FAIL_COND_MSG(regionsSimplified.is_null(), "regionsSimplified must not be null.");
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	TexSyn::ImageScalar<double> regionsOutput;
+	regionsOutput.init(m_regionsInt.get_width(), m_regionsInt.get_height(), true);
+	regionsOutput.for_all_pixels([&] (double & pix, int x, int y)
+	{
+		int region = m_regionsInt.get_pixel(x, y);
+		pix = float(region)/(m_nbRegions-1);
+	});
+	
+	Ref<Image> tmpResultRef;
+	tmpResultRef = Image::create_empty(regionsOutput.get_width(), regionsOutput.get_height(), false, Image::FORMAT_RF);
+	regionsOutput.toImage(tmpResultRef, 0);
+	regionsSimplified->copy_from(tmpResultRef);
+}
+
+void LocallyStationaryTextureSynthesizer::invFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invTFilteredRef)
+{
+	ERR_FAIL_COND_MSG(invTFilteredRef.is_null(), "invTFilteredRef must not be null.");
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	ERR_FAIL_COND_MSG(!m_exemplar.is_initialized(), "computeInvT() or computeGaussianExemplar() should be called before this function.");
+	//computing the filtered region map
+	TexSyn::MipmapMultiIDMap mipmapMultiIDMap;
+	mipmapMultiIDMap.setIDMap(m_multiIdMap);
+	mipmapMultiIDMap.computeMipmap();
+	mipmapMultiIDMap.upsizeMipmap();
+	
+	//computing the exemplar mipmap
+	TexSyn::Mipmap mipmapExemplar;
+	mipmapExemplar.setTexture(m_exemplar);
+	mipmapExemplar.computeMipmap();
+	mipmapExemplar.upsizeMipmap();
+	
+	//Computing the pre-filtered LUTs
+	LocalVector<ImageVectorType> TinvVector;
+	
+	Vector<Ref<Image>> TinvVectorRef;
+	TinvVectorRef.resize(mipmapMultiIDMap.nbMaps());
+	
+	for(int i=0; i<mipmapMultiIDMap.nbMaps(); ++i)
+	{
+		ImageVectorType invT;
+		invT.init(128, m_nbRegions, mipmapExemplar.mipmap(i).get_nbDimensions(), true);
+		m_gst.computeinvTMultipleRegions(mipmapExemplar.mipmap(i), mipmapMultiIDMap.mipmap(i), invT, false);
+		TinvVector.push_back(invT);
+		Ref<Image> tmpResultRef = Image::create_empty(invT.get_width(), invT.get_height(), false, Image::FORMAT_RGBF);
+		invT.toImageIndexed(tmpResultRef, 0);
+		TinvVectorRef.write[i].instantiate();
+		TinvVectorRef.write[i]->copy_from(tmpResultRef);
+		//Optionnal previsualisation save
+		TinvVectorRef.write[i]->save_png(String("invTRef_num.png").replace("num", String::num_int64(i)));
+	}
+	
+	invTFilteredRef->create_from_images(TinvVectorRef);
+}
+
+void LocallyStationaryTextureSynthesizer::computeInvT()
+{
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	if(!m_invT.is_initialized())
+	{
+		computeImageVector();
+		precomputationsGaussian();
+	}
+	m_outputImageVector = m_invT;
+}
+
+void LocallyStationaryTextureSynthesizer::computeGaussianExemplar()
+{
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	if(!m_TG.is_initialized())
+	{
+		computeImageVector();
+		precomputationsGaussian();
+	}
+	m_outputImageVector = m_TG;
+}
+
+void LocallyStationaryTextureSynthesizer::computeExemplarInLocalPCAs()
+{
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	if(!m_exemplarPCA.is_initialized())
+	{
+		computeImageVector();
+		precomputationsLocalPCAs();
+	}
+	m_outputImageVector = m_exemplarPCA;
+}
+
+void LocallyStationaryTextureSynthesizer::computeInvLocalPCAs()
+{	
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	if(!m_invPCA.is_initialized())
+	{
+		computeImageVector();
+		precomputationsLocalPCAs();
+	}
+	m_outputImageVector = m_invPCA;
+}
+
+void LocallyStationaryTextureSynthesizer::precomputationsGaussian()
+{
+	//Pre-computation of invT
+	m_invT.init(128, m_nbRegions, m_exemplar.get_nbDimensions(), true);
+	m_gst.computeinvTRegions(m_exemplar, m_regionsInt, m_invT);
+	
+	m_TG.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
+	m_gst.computeTinputRegions(m_exemplar, m_regionsInt, m_TG, false, false);
+}
+
+void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
+{
+	//computing local PCAs, projected exemplar, and packing inverse PCA infos
+	m_exemplarPCA.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
+	LocalVector<PCAType> localPCAs;
+	m_invPCA.init(1+m_exemplar.get_nbDimensions(), m_nbRegions, m_exemplar.get_nbDimensions(), true);
+	for(unsigned int i=0; i<m_nbRegions; ++i)
+	{
+		localPCAs.push_back(PCAType(m_exemplar, m_multiIdMap, uint64_t(i)));
+		localPCAs[i].computePCA();
+		localPCAs[i].project(m_exemplarPCA);
+		PCAType::MatrixType localEigenVectors = localPCAs[i].get_eigenVectors();
+		PCAType::VectorType localMean = localPCAs[i].get_mean();
+		//filling invPCA: at x=0, mean, and then eigen vectors
+		for(unsigned int d=0; d<m_exemplar.get_nbDimensions(); ++d)
+		{
+			m_invPCA.set_pixel(0, i, d, localMean[d]);
+			for(int r=0; r<localEigenVectors.rows(); ++r)
+			{
+				m_invPCA.set_pixel(r+1, i, d, localEigenVectors(r, d));
+			}
+		}
+	}
+	//In order to save in .png, add 0.5
+	m_exemplarPCA.parallel_for_all_images([&] (ImageVectorType::ImageScalarType &image, unsigned int d)
+	{
+		image += 0.5;
+	});
+}
+
+void LocallyStationaryTextureSynthesizer::_bind_methods()
+{
+	ClassDB::bind_method(D_METHOD("setRegionMap", "regions"), &LocallyStationaryTextureSynthesizer::setRegionMap);
+	ClassDB::bind_method(D_METHOD("originsMapToImage", "origins"), &LocallyStationaryTextureSynthesizer::originsMapToImage);
+	ClassDB::bind_method(D_METHOD("simplifiedRegionMapToImage", "regionsSimplified"), &LocallyStationaryTextureSynthesizer::simplifiedRegionMapToImage);
+	ClassDB::bind_method(D_METHOD("invFilteredToTexture2DArrayAlbedo", "invTFilteredRef"), &LocallyStationaryTextureSynthesizer::invFilteredToTexture2DArrayAlbedo);
+	ClassDB::bind_method(D_METHOD("computeInvT"), &LocallyStationaryTextureSynthesizer::computeInvT);
+	ClassDB::bind_method(D_METHOD("computeGaussianExemplar"), &LocallyStationaryTextureSynthesizer::computeGaussianExemplar);
+	ClassDB::bind_method(D_METHOD("computeExemplarInLocalPCAs"), &LocallyStationaryTextureSynthesizer::computeExemplarInLocalPCAs);
+	ClassDB::bind_method(D_METHOD("computeInvLocalPCAs"), &LocallyStationaryTextureSynthesizer::computeInvLocalPCAs);
 }

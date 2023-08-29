@@ -7,6 +7,7 @@
 #include "statistics.h"
 #include "procedural_sampling.h"
 #include "scene/resources/image_texture.h"
+#include "gaussian_transfer.h"
 
 constexpr std::uint32_t texsyn_log2(std::uint32_t n) noexcept
 {
@@ -80,6 +81,11 @@ public:
 		RIM=256
 	};
 
+	//Base
+	
+	using ImageVectorType = TexSyn::ImageVector<float>;
+	using ImageScalarType = TexSyn::ImageScalar<float>;
+
 	TextureSynthesizer();
 
 	void set_albedo(Ref<Image> image);
@@ -91,14 +97,33 @@ public:
 
 	void set_component(TextureTypeFlag type, Ref<Image> image);
 
-	void spatiallyVaryingMeanToAlbedo(Ref<Image> image);
-	void spatiallyVaryingMeanToNormal(Ref<Image> image);
-	void spatiallyVaryingMeanToHeight(Ref<Image> image);
-	void spatiallyVaryingMeanToRoughness(Ref<Image> image);
-	void spatiallyVaryingMeanToMetallic(Ref<Image> image);
-	void spatiallyVaryingMeanToAO(Ref<Image> image);
+	void outputToAlbedo(Ref<Image> image);
+	void outputToNormal(Ref<Image> image);
+	void outputToHeight(Ref<Image> image);
+	void outputToRoughness(Ref<Image> image);
+	void outputToMetallic(Ref<Image> image);
+	void outputToAO(Ref<Image> image);
 
-	void spatiallyVaryingMeanToComponent(TextureTypeFlag type, Ref<Image> image);
+	void outputToComponent(TextureTypeFlag type, Ref<Image> image);
+
+protected:
+	static void _bind_methods();
+
+	void computeImageVector();
+
+	int m_textureTypeFlag;
+	LocalVector<Ref<Image>> m_imageRefs;
+	TexSyn::ImageVector<float> m_exemplar;
+	TexSyn::ImageVector<float> m_outputImageVector;
+};
+
+class SamplerTextureSynthesizer : public TextureSynthesizer
+{
+	GDCLASS(SamplerTextureSynthesizer, TextureSynthesizer);
+
+public:
+
+	SamplerTextureSynthesizer();
 
 	void set_cyclostationaryPeriods(Vector2 t0, Vector2 t1);
 	void set_importancePDF(Ref<Image> image);
@@ -107,30 +132,63 @@ public:
 
 	void computeAutocovarianceSampler();
 	void samplerPdfToImage(Ref<Image> image);
-
 	void samplerRealizationToImage(Ref<Image> image, unsigned int size);
-
 	void centerExemplar(Ref<Image> exemplar, Ref<Image> mean);
 	
-	void test_colorSynthesisPrototype(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> fgbgmap, Ref<Image> resultRef, Ref<Image> debugDataRef);
-	void precomputeLocallyStationary(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> gaussianOutputRef, 
-										Ref<Image> invTRef, Ref<Image> regionsOutputRef, Ref<Image> originsRef, Ref<Texture2DArray> invTFilteredRef);
-	void precomputeLocalPCA(Ref<Image> exemplar, Ref<Image> regions, Ref<Image> pcaOutputRef, Ref<Image> invPCARef, 
-							Ref<Image> regionsOutputRef, Ref<Image> originsRef);
+	void computeWeightedMean();
 	
+protected:
+	static void _bind_methods();
+	
+private:
+	TexSyn::ProceduralSampling<float> m_proceduralSampling;
+	unsigned int m_meanAccuracy;
+	unsigned int m_meanSize;
+};
+
+class LocallyStationaryTextureSynthesizer : public TextureSynthesizer
+{
+	GDCLASS(LocallyStationaryTextureSynthesizer, TextureSynthesizer);
+	
+public:
+
+	using ImageRegionType = TexSyn::ImageScalar<int>;
+	using PCAType = TexSyn::PCA<float>;
+	using ImageMultipleRegionType = TexSyn::MipmapMultiIDMap::ImageMultiIDMapType;
+
+	LocallyStationaryTextureSynthesizer();
+
+	void setRegionMap(Ref<Image> regions);
+	
+	void originsMapToImage(Ref<Image> origins);
+	void simplifiedRegionMapToImage(Ref<Image> regionsSimplified);
+	
+	void invFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invTFilteredRef);
+	
+	void computeInvT();
+	void computeGaussianExemplar();
+	
+	void computeExemplarInLocalPCAs();
+	void computeInvLocalPCAs();
+
 protected:
 	static void _bind_methods();
 
 private:
-	void computeImageVector();
 
-	int m_textureTypeFlag;
-	LocalVector<Ref<Image>> m_imageRefs;
-	TexSyn::ImageVector<float> m_exemplar;
-	TexSyn::ImageVector<float> m_weightedMean;
-	TexSyn::ProceduralSampling<float> m_proceduralSampling;
-	unsigned int m_meanAccuracy;
-	unsigned int m_meanSize;
+	void precomputationsGaussian();
+	void precomputationsLocalPCAs();
+
+	unsigned int m_nbRegions;
+	ImageRegionType m_regionsInt;
+	ImageMultipleRegionType m_multiIdMap;
+	TexSyn::GaussianTransfer m_gst;
+	
+	ImageVectorType m_invT; //< stores the inverse transfer
+	ImageVectorType m_TG; //< stores the Gaussianized exemplar
+	
+	ImageVectorType m_exemplarPCA; //< stores the exemplar in local PCA spaces
+	ImageVectorType m_invPCA; //< stores the inverse local PCAs
 };
 
 #define TEXSYN_TESTS

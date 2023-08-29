@@ -12,7 +12,7 @@ namespace TexSyn {
 class GaussianTransfer
 {
 public:
-	using ImageType = ImageVector<double>;
+	using ImageType = ImageVector<float>;
 	using DataType = typename ImageType::DataType;
 	using VectorType = typename ImageType::VectorType;
 	using ImageRegionMapType = ImageScalar<int>;
@@ -39,7 +39,7 @@ public:
 	static double CDF(double x, double mu, double sigma);
 	static double invCDF(double U, double mu, double sigma);
 	
-	void toMultipleRegions(ImageMultipleRegionMapType &imageMultipleRegions, const ImageRegionMapType &imageRegion);
+	static void toMultipleRegions(ImageMultipleRegionMapType &imageMultipleRegions, const ImageRegionMapType &imageRegion);
 	
 	GaussianTransfer();
 	void setMean(DataType mean);

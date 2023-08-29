@@ -126,7 +126,7 @@ struct BitVector
 class Mipmap
 {
 public:
-	using ImageType = ImageVector<double>;
+	using ImageType = ImageVector<float>;
 	using ImageArrayType=LocalVector<ImageType>;
 
 	Mipmap();
