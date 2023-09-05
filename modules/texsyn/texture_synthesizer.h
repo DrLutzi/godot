@@ -170,6 +170,8 @@ public:
 	
 	void computeExemplarInLocalPCAs();
 	void computeInvLocalPCAs();
+	
+	void test();
 
 protected:
 	static void _bind_methods();

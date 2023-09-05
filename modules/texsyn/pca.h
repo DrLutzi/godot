@@ -112,9 +112,9 @@ void PCA<T>::computeEigenVectors()
 	MatrixType cov = centered.adjoint() * centered / double(centered.rows() - 1);
 
 	// Compute the eigenvectors and eigenvalues of the covariance matrix
-	Eigen::SelfAdjointEigenSolver<MatrixType> eig(cov);
-	m_eigenValues = eig.eigenvalues().reverse();
-	m_eigenVectors = eig.eigenvectors().rowwise().reverse();
+	Eigen::SelfAdjointEigenSolver<MatrixType> eigenSolver(cov);
+	m_eigenValues = eigenSolver.eigenvalues();
+	m_eigenVectors = eigenSolver.eigenvectors();
 
 	// Normalize the eigenvectors
 	for (int i = 0; i < m_eigenVectors.cols(); i++)
@@ -154,19 +154,23 @@ void PCA<T>::back_project(const ImageType &input, ImageType &output) const
 	if(useRegionIDMap())
 	{
 		MatrixType matrix(m_nbIDs, input.get_nbDimensions());
-		MatrixType projection = m_eigenVectors * m_eigenValues.asDiagonal() * m_eigenVectors.transpose();
+		fromImageVectorToMatrixWithRegionID(input, matrix, m_regionIDMap, m_id);
+		MatrixType back_projection = m_eigenVectors.transpose();
 
 		// Project the matrix back onto the original space
-		MatrixType matrix_inv = matrix * projection.transpose() + m_mean.transpose();
+		MatrixType matrix_inv = matrix * back_projection;
+		matrix_inv.rowwise() += m_mean.transpose();
 		fromMatrixToImageVectorWithRegionID(matrix_inv, output, m_regionIDMap, m_id);
 	}
 	else
 	{
 		MatrixType matrix(input.get_width() * input.get_height(), input.get_nbDimensions());
-		MatrixType projection = m_eigenVectors * m_eigenValues.asDiagonal() * m_eigenVectors.transpose();
+		fromImageVectorToMatrix(input, matrix);
+		MatrixType back_projection = m_eigenVectors.transpose();
 
 		// Project the matrix back onto the original space
-		MatrixType matrix_inv = matrix * projection.transpose() + m_mean.transpose();
+		MatrixType matrix_inv = matrix * back_projection;
+		matrix_inv.rowwise() += m_mean.transpose();
 		fromMatrixToImageVector(matrix_inv, output);
 	}
 }

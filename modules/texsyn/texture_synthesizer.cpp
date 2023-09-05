@@ -664,7 +664,7 @@ void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 		localPCAs.push_back(PCAType(m_exemplar, m_multiIdMap, uint64_t(i)));
 		localPCAs[i].computePCA();
 		localPCAs[i].project(m_exemplarPCA);
-		PCAType::MatrixType localEigenVectors = localPCAs[i].get_eigenVectors();
+		PCAType::MatrixType localEigenVectors = localPCAs[i].get_eigenVectors().transpose();
 		PCAType::VectorType localMean = localPCAs[i].get_mean();
 		//filling invPCA: at x=0, mean, and then eigen vectors
 		for(unsigned int d=0; d<m_exemplar.get_nbDimensions(); ++d)
@@ -676,11 +676,44 @@ void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 			}
 		}
 	}
+	
+	//For testing
+	ImageVectorType outputPCA;
+	outputPCA.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
+	for(unsigned int i=0; i<m_nbRegions; ++i)
+	{
+		localPCAs[i].back_project(m_exemplarPCA, outputPCA);
+		//TODO check if GPU process does the same thing
+	}
+	Ref<Image> tmpResultRef;
+	tmpResultRef = Image::create_empty(outputPCA.get_width(), outputPCA.get_height(), false, Image::FORMAT_RGBF);
+	outputPCA.toImageIndexed(tmpResultRef, 0);
+	tmpResultRef->save_png("test.png");
+	
 	//In order to save in .png, add 0.5
-	m_exemplarPCA.parallel_for_all_images([&] (ImageVectorType::ImageScalarType &image, unsigned int d)
+	m_exemplarPCA.for_all_images([&] (ImageVectorType::ImageScalarType &image, unsigned int d)
 	{
 		image += 0.5;
 	});
+}
+
+void LocallyStationaryTextureSynthesizer::test()
+{
+	ImageVectorType image;
+	image.init(2, 1, 2);
+	image.set_pixel(0, 0, 0, 1.0);
+	image.set_pixel(0, 0, 1, 0.0);
+	image.set_pixel(1, 0, 0, 0.0);
+	image.set_pixel(1, 0, 1, 1.0);
+	
+	PCAType pca(image);
+	pca.computePCA();
+	pca.project(image);
+	
+	ImageVectorType imageInv;
+	imageInv.init(image.get_width(), image.get_height(), true);
+	pca.back_project(image, imageInv);
+	return;
 }
 
 void LocallyStationaryTextureSynthesizer::_bind_methods()
@@ -693,4 +726,6 @@ void LocallyStationaryTextureSynthesizer::_bind_methods()
 	ClassDB::bind_method(D_METHOD("computeGaussianExemplar"), &LocallyStationaryTextureSynthesizer::computeGaussianExemplar);
 	ClassDB::bind_method(D_METHOD("computeExemplarInLocalPCAs"), &LocallyStationaryTextureSynthesizer::computeExemplarInLocalPCAs);
 	ClassDB::bind_method(D_METHOD("computeInvLocalPCAs"), &LocallyStationaryTextureSynthesizer::computeInvLocalPCAs);
+	
+	ClassDB::bind_method(D_METHOD("test"), &LocallyStationaryTextureSynthesizer::test);
 }
