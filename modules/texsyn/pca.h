@@ -24,7 +24,7 @@ public :
 	PCA (const ImageType& input);
 	PCA (const ImageType& input, const ImageIDType &regionIDMap, uint64_t id);
 
-	void computePCA(unsigned int nbComponents = 0);
+	void computeProjection(unsigned int nbComponents = 0);
 	void project(ImageType &res);
 	void back_project(const ImageType &input, ImageType& output) const;
 	
@@ -47,7 +47,7 @@ private:
 	
 	ImageIDType m_regionIDMap;
 	uint64_t m_id;
-	int m_nbIDs;
+	int m_nbTexels;
 };
 
 template<typename T>
@@ -59,7 +59,7 @@ PCA<T>::PCA():
 	m_mean(),
 	m_regionIDMap(),
 	m_id(0),
-	m_nbIDs(0)
+	m_nbTexels(0)
 {}
 
 template<typename T>
@@ -71,7 +71,7 @@ PCA<T>::PCA(const ImageType &input) :
 	m_mean(),
 	m_regionIDMap(),
 	m_id(0),
-	m_nbIDs(0)
+	m_nbTexels(input.get_width() * input.get_height())
 {
 	m_matrix.resize(input.get_width() * input.get_height(), input.get_nbDimensions());
 	fromImageVectorToMatrix(input, m_matrix);
@@ -87,11 +87,11 @@ PCA<T>::PCA (const ImageType& input, const ImageIDType &regionIDMap, uint64_t id
 	m_mean(),
 	m_regionIDMap(regionIDMap),
 	m_id(id),
-	m_nbIDs(0)
+	m_nbTexels(0)
 {
 	m_matrix.resize(input.get_width() * input.get_height(), input.get_nbDimensions());
-	m_nbIDs = fromImageVectorToMatrixWithRegionID(input, m_matrix, m_regionIDMap, m_id);
-	m_matrix.conservativeResize(m_nbIDs, input.get_nbDimensions());
+	m_nbTexels = fromImageVectorToMatrixWithRegionID(input, m_matrix, m_regionIDMap, m_id);
+	m_matrix.conservativeResize(m_nbTexels, input.get_nbDimensions());
 	computeEigenVectors();
 }
 
@@ -125,7 +125,7 @@ void PCA<T>::computeEigenVectors()
 }
 
 template<typename T>
-void PCA<T>::computePCA(unsigned int nbComponents)
+void PCA<T>::computeProjection(unsigned int nbComponents)
 {
 	if(nbComponents == 0)
 	{
@@ -153,7 +153,7 @@ void PCA<T>::back_project(const ImageType &input, ImageType &output) const
 {
 	if(useRegionIDMap())
 	{
-		MatrixType matrix(m_nbIDs, input.get_nbDimensions());
+		MatrixType matrix(m_nbTexels, input.get_nbDimensions());
 		fromImageVectorToMatrixWithRegionID(input, matrix, m_regionIDMap, m_id);
 		MatrixType back_projection = m_eigenVectors.transpose();
 

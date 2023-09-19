@@ -69,7 +69,7 @@ public:
 	void toImage(Ref<Image> image) const;
 
 	void fromImageIndexed(Ref<Image> image, unsigned int startIndex); //For anything more than RGBA
-	void toImageIndexed(Ref<Image> image, unsigned int startIndex);
+	void toImageIndexed(Ref<Image> image, unsigned int startIndex) const;
 
 	ImageVector<T> &operator=(const ImageVector<T> &other);
 
@@ -397,7 +397,7 @@ void ImageVector<T>::fromImageIndexed(Ref<Image> image, unsigned int startIndex)
 }
 
 template<typename T>
-void ImageVector<T>::toImageIndexed(Ref<Image> image, unsigned int startIndex)
+void ImageVector<T>::toImageIndexed(Ref<Image> image, unsigned int startIndex) const
 {
 	TEXSYN_ASSERT_INITIALIZED();
 	ERR_FAIL_COND_MSG(image.ptr() == nullptr, "image must not be null, and must be locked for write access.");

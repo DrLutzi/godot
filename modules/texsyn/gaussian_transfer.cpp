@@ -267,8 +267,28 @@ void GaussianTransfer::computeinvTMultipleRegions(const ImageType &input, const 
 				}
 			});
 			sortedInputValues.resize(i);
-
 			std::sort(sortedInputValues.begin(), sortedInputValues.end());
+			
+			//Extra step: if there are less input values than there are texels, we smooth them out
+			if(sortedInputValues.size() < Tinv.get_width() && sortedInputValues.size() > 0)
+			{
+				std::vector<DataType> biggerSortedInputValues;
+				biggerSortedInputValues.resize(Tinv.get_width());
+				for (int i = 0; i < biggerSortedInputValues.size(); i++)
+				{
+					double dindex = double(i)/(biggerSortedInputValues.size()-1) * (sortedInputValues.size()-1);
+					int indexF = int(floor(dindex));
+					int indexC = int(ceil(dindex));
+					double indexDelta = dindex-indexF;
+					if(unlikely(indexC>=sortedInputValues.size()))
+					{
+						--indexC;
+					}
+					biggerSortedInputValues[i] = sortedInputValues[indexF]*(1.0-indexDelta) + sortedInputValues[indexC]*indexDelta;
+				}
+				sortedInputValues = biggerSortedInputValues;
+			}
+
 
 			// Generate Tinv look-up table
 			for (int i = 0; i < Tinv.get_width(); i++)

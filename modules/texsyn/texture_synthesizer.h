@@ -88,33 +88,19 @@ public:
 
 	TextureSynthesizer();
 
-	void set_albedo(Ref<Image> image);
-	void set_normal(Ref<Image> image);
-	void set_height(Ref<Image> image);
-	void set_roughness(Ref<Image> image);
-	void set_metallic(Ref<Image> image);
-	void set_ao(Ref<Image> image);
-
 	void set_component(TextureTypeFlag type, Ref<Image> image);
-
-	void outputToAlbedo(Ref<Image> image);
-	void outputToNormal(Ref<Image> image);
-	void outputToHeight(Ref<Image> image);
-	void outputToRoughness(Ref<Image> image);
-	void outputToMetallic(Ref<Image> image);
-	void outputToAO(Ref<Image> image);
-
 	void outputToComponent(TextureTypeFlag type, Ref<Image> image);
 
 protected:
 	static void _bind_methods();
 
 	void computeImageVector();
+	unsigned int getStartIndexFromComponent(TextureTypeFlag flag);
 
 	int m_textureTypeFlag;
 	LocalVector<Ref<Image>> m_imageRefs;
-	TexSyn::ImageVector<float> m_exemplar;
-	TexSyn::ImageVector<float> m_outputImageVector;
+	ImageVectorType m_exemplar;
+	ImageVectorType m_outputImageVector;
 };
 
 class SamplerTextureSynthesizer : public TextureSynthesizer
@@ -163,7 +149,8 @@ public:
 	void originsMapToImage(Ref<Image> origins);
 	void simplifiedRegionMapToImage(Ref<Image> regionsSimplified);
 	
-	void invFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invTFilteredRef);
+	void invTFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invTFilteredRef);
+	void invPCAFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invPCAFilteredRef);
 	
 	void computeInvT();
 	void computeGaussianExemplar();
@@ -171,6 +158,7 @@ public:
 	void computeExemplarInLocalPCAs();
 	void computeInvLocalPCAs();
 	
+	void setDebugSaves(bool b);
 	void test();
 
 protected:
@@ -178,19 +166,27 @@ protected:
 
 private:
 
+	void precomputationsPrefiltering();
 	void precomputationsGaussian();
 	void precomputationsLocalPCAs();
+	
+	ImageVectorType debug_visualizeRegions(const ImageMultipleRegionType &map);
 
 	unsigned int m_nbRegions;
 	ImageRegionType m_regionsInt;
 	ImageMultipleRegionType m_multiIdMap;
 	TexSyn::GaussianTransfer m_gst;
+	bool m_debugSaves;
+	
+	TexSyn::MipmapMultiIDMap m_mipmapMultiIDMap;
+	TexSyn::Mipmap m_mipmapExemplar;
 	
 	ImageVectorType m_invT; //< stores the inverse transfer
 	ImageVectorType m_TG; //< stores the Gaussianized exemplar
 	
 	ImageVectorType m_exemplarPCA; //< stores the exemplar in local PCA spaces
 	ImageVectorType m_invPCA; //< stores the inverse local PCAs
+	LocalVector<ImageVectorType> m_invPCAPreFiltered; //< stores the pre-filtered inverse local PCAs
 };
 
 #define TEXSYN_TESTS
