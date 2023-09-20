@@ -113,8 +113,8 @@ void PCA<T>::computeEigenVectors()
 
 	// Compute the eigenvectors and eigenvalues of the covariance matrix
 	Eigen::SelfAdjointEigenSolver<MatrixType> eigenSolver(cov);
-	m_eigenValues = eigenSolver.eigenvalues();
-	m_eigenVectors = eigenSolver.eigenvectors();
+	m_eigenValues = eigenSolver.eigenvalues().reverse();
+	m_eigenVectors = eigenSolver.eigenvectors().reverse();
 
 	// Normalize the eigenvectors
 	for (int i = 0; i < m_eigenVectors.cols(); i++)
