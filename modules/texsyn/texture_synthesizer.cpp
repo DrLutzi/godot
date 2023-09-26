@@ -478,12 +478,10 @@ void LocallyStationaryTextureSynthesizer::precomputationsPrefiltering()
 {
 	m_mipmapMultiIDMap.setIDMap(m_multiIdMap);
 	m_mipmapMultiIDMap.computeMipmap();
-	//m_mipmapMultiIDMap.upsizeMipmap();
-	
+
 	//computing the exemplar mipmap
 	m_mipmapExemplar.setTexture(m_exemplar);
 	m_mipmapExemplar.computeMipmap();
-	//m_mipmapExemplar.upsizeMipmap();
 	
 	if(m_debugSaves)
 	{
@@ -518,6 +516,8 @@ void LocallyStationaryTextureSynthesizer::precomputationsGaussian()
 void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 {
 	precomputationsPrefiltering();
+	m_mipmapMultiIDMap.upsizeMipmap();
+	m_mipmapExemplar.upsizeMipmap();
 	//computing local PCAs, projected exemplar, and packing inverse PCA infos
 	m_exemplarPCA.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
 	LocalVector<PCAType> localPCAs;
@@ -525,8 +525,105 @@ void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 	for(unsigned int i=0; i<m_nbRegions; ++i)
 	{
 		localPCAs.push_back(PCAType(m_exemplar, m_multiIdMap, uint64_t(i)));
-		localPCAs[i].computeProjection();
-		localPCAs[i].project(m_exemplarPCA);
+		PCAType &localPCA = localPCAs[i];
+		localPCA.computePCA();
+		localPCA.computeProjection();
+		localPCA.project(m_exemplarPCA);
+		PCAType::MatrixType localEigenVectors = localPCA.get_eigenVectors().transpose();
+		PCAType::VectorType localMean = localPCA.get_mean();
+		//filling invPCA: at x=0, mean, and then eigen vectors
+		for(unsigned int d=0; d<m_exemplar.get_nbDimensions(); ++d)
+		{
+			m_invPCA.set_pixel(0, i, d, localMean[d]);
+			for(int r=0; r<localEigenVectors.rows(); ++r)
+			{
+				m_invPCA.set_pixel(r+1, i, d, localEigenVectors(r, d));
+			}
+		}
+	}
+	
+	for(unsigned int i=0; i<m_nbRegions; ++i)
+	{
+		ImageVectorType pcaTextureRegion;
+		computeExemplarWithOnlyPCAOfRegion(pcaTextureRegion, uint64_t(i));
+	}
+	
+	//Computing inverse PCAs, but prefiltered
+	m_invPCAPreFiltered.resize(m_mipmapExemplar.nbMaps());
+	LocalVector<LocalVector<PCAType>> localPCAsPreFiltered;
+	localPCAsPreFiltered.resize(m_mipmapExemplar.nbMaps());
+	for(unsigned int k=0; k<localPCAsPreFiltered.size(); ++k)
+	{
+		LocalVector<PCAType> &localPCAs = localPCAsPreFiltered[k];
+		const ImageVectorType &exemplar = m_mipmapExemplar.mipmap(k);
+		const ImageMultipleRegionType &multipleRegions = m_mipmapMultiIDMap.mipmap(k);
+		ImageVectorType &invPCA = m_invPCAPreFiltered[k];
+		invPCA.init(1+exemplar.get_nbDimensions(), m_nbRegions, exemplar.get_nbDimensions(), true);
+		for(unsigned int i=0; i<m_nbRegions; ++i)
+		{
+			localPCAs.push_back(PCAType(exemplar, multipleRegions, uint64_t(i), false));
+			PCAType &localPCA = localPCAs[i];
+			localPCA.computePCA();
+			PCAType::MatrixType localEigenVectors = localPCA.get_eigenVectors().transpose();
+			PCAType::VectorType localMean = localPCA.get_mean();
+			//filling invPCA: at x=0, mean, and then eigen vectors
+			for(unsigned int d=0; d<exemplar.get_nbDimensions(); ++d)
+			{
+				invPCA.set_pixel(0, i, d, localMean[d]);
+				for(int r=0; r<localEigenVectors.rows(); ++r)
+				{
+					invPCA.set_pixel(r+1, i, d, localEigenVectors(r, d));
+				}
+			}
+		}
+	}
+	
+	//Testing by simulating the GPU process
+	ImageVectorType outputPCA;
+	outputPCA.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
+	for(int x=0; x<outputPCA.get_width(); ++x)
+	{
+		for(int y=0; y<outputPCA.get_height(); ++y)
+		{
+			int region = m_regionsInt.get_pixel(x, y);
+			ImageVectorType::VectorType mean = m_invPCA.get_pixel(0, region);
+			ImageVectorType::VectorType p1 = m_invPCA.get_pixel(1, region);
+			ImageVectorType::VectorType p2 = m_invPCA.get_pixel(2, region);
+			ImageVectorType::VectorType p3 = m_invPCA.get_pixel(3, region);
+			ImageVectorType::VectorType inputPCA = m_exemplarPCA.get_pixel(x, y);
+			ImageVectorType::VectorType v = mean;
+			v.write[0] += inputPCA[0]*p1[0] + inputPCA[1]*p2[0] + inputPCA[2]*p3[0];
+			v.write[1] += inputPCA[0]*p1[1] + inputPCA[1]*p2[1] + inputPCA[2]*p3[1];
+			v.write[2] += inputPCA[0]*p1[2] + inputPCA[1]*p2[2] + inputPCA[2]*p3[2];
+			outputPCA.set_pixel(x, y, v);
+		}
+	}
+	Ref<Image> tmpResultRef;
+	tmpResultRef = Image::create_empty(outputPCA.get_width(), outputPCA.get_height(), false, Image::FORMAT_RGBF);
+	outputPCA.toImageIndexed(tmpResultRef, 0);
+	tmpResultRef->save_png("test.png");
+
+	//In order to save in .png, add 0.5
+	m_exemplarPCA.for_all_images([&] (ImageVectorType::ImageScalarType &image, unsigned int d)
+	{
+		image += 0.5;
+	});
+}
+
+void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAsBetter()
+{
+	precomputationsPrefiltering();
+	m_mipmapMultiIDMap.upsizeMipmap();
+	m_exemplarPCA.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
+	LocalVector<PCAType> localPCAs;
+	m_invPCA.init(1+m_exemplar.get_nbDimensions(), m_nbRegions, m_exemplar.get_nbDimensions(), true);
+	for(unsigned int i=0; i<m_nbRegions; ++i)
+	{
+		localPCAs.push_back(PCAType(m_exemplar, m_multiIdMap, uint64_t(i)));
+		PCAType &localPCA = localPCAs[i];
+		localPCA.computePCA();
+		localPCA.computeProjection();
+		localPCA.project(m_exemplarPCA);
 		PCAType::MatrixType localEigenVectors = localPCAs[i].get_eigenVectors().transpose();
 		PCAType::VectorType localMean = localPCAs[i].get_mean();
 		//filling invPCA: at x=0, mean, and then eigen vectors
@@ -547,17 +644,18 @@ void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 	for(unsigned int k=0; k<localPCAsPreFiltered.size(); ++k)
 	{
 		LocalVector<PCAType> &localPCAs = localPCAsPreFiltered[k];
-		const ImageVectorType &exemplar = m_mipmapExemplar.mipmap(k);
 		const ImageMultipleRegionType &multipleRegions = m_mipmapMultiIDMap.mipmap(k);
 		ImageVectorType &invPCA = m_invPCAPreFiltered[k];
-		invPCA.init(1+exemplar.get_nbDimensions(), m_nbRegions, exemplar.get_nbDimensions(), true);
+		invPCA.init(1+m_exemplar.get_nbDimensions(), m_nbRegions, m_exemplar.get_nbDimensions(), true);
 		for(unsigned int i=0; i<m_nbRegions; ++i)
 		{
-			localPCAs.push_back(PCAType(exemplar, multipleRegions, uint64_t(i)));
-			PCAType::MatrixType localEigenVectors = localPCAs[i].get_eigenVectors().transpose();
-			PCAType::VectorType localMean = localPCAs[i].get_mean();
+			localPCAs.push_back(PCAType(m_exemplar, multipleRegions, uint64_t(i)));
+			PCAType &localPCA = localPCAs[i];
+			localPCA.computePCA();
+			PCAType::MatrixType localEigenVectors = localPCA.get_eigenVectors().transpose();
+			PCAType::VectorType localMean = localPCA.get_mean();
 			//filling invPCA: at x=0, mean, and then eigen vectors
-			for(unsigned int d=0; d<exemplar.get_nbDimensions(); ++d)
+			for(unsigned int d=0; d<m_exemplar.get_nbDimensions(); ++d)
 			{
 				invPCA.set_pixel(0, i, d, localMean[d]);
 				for(int r=0; r<localEigenVectors.rows(); ++r)
@@ -568,15 +666,9 @@ void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 		}
 	}
 	
-	//For testing
+	//Testing by simulating the GPU process
 	ImageVectorType outputPCA;
 	outputPCA.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
-//	for(unsigned int i=0; i<m_nbRegions; ++i)
-//	{
-//		localPCAs[i].back_project(m_exemplarPCA, outputPCA);
-//		//TODO check if GPU process does the same thing
-//	}
-
 	for(int x=0; x<outputPCA.get_width(); ++x)
 	{
 		for(int y=0; y<outputPCA.get_height(); ++y)
@@ -606,6 +698,34 @@ void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 	});
 }
 
+void LocallyStationaryTextureSynthesizer::computeExemplarWithOnlyPCAOfRegion(ImageVectorType &texture, uint64_t region)
+{
+	ERR_FAIL_COND_MSG(!m_exemplarPCA.is_initialized(), "Exemplar in PCA space must have been computed before calling this function.");
+	texture.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
+	for(int x=0; x<texture.get_width(); ++x)
+	{
+		for(int y=0; y<texture.get_height(); ++y)
+		{
+			ImageVectorType::VectorType mean = m_invPCA.get_pixel(0, region);
+			ImageVectorType::VectorType p1 = m_invPCA.get_pixel(1, region);
+			ImageVectorType::VectorType p2 = m_invPCA.get_pixel(2, region);
+			ImageVectorType::VectorType p3 = m_invPCA.get_pixel(3, region);
+			ImageVectorType::VectorType inputPCA = m_exemplarPCA.get_pixel(x, y);
+			ImageVectorType::VectorType v = mean;
+			v.write[0] += inputPCA[0]*p1[0] + inputPCA[1]*p2[0] + inputPCA[2]*p3[0];
+			v.write[1] += inputPCA[0]*p1[1] + inputPCA[1]*p2[1] + inputPCA[2]*p3[1];
+			v.write[2] += inputPCA[0]*p1[2] + inputPCA[1]*p2[2] + inputPCA[2]*p3[2];
+			texture.set_pixel(x, y, v);
+		}
+	}
+	if(m_debugSaves)
+	{
+		Ref<Image> tmpResultRef = Image::create_empty(texture.get_width(), texture.get_height(), false, Image::FORMAT_RGBF);
+		texture.toImageIndexed(tmpResultRef, 0);
+		tmpResultRef->save_png(String("debug/pcaFullTransfer_num.png").replace("num", String::num_int64(region)));
+	}
+}
+
 LocallyStationaryTextureSynthesizer::ImageVectorType LocallyStationaryTextureSynthesizer::debug_visualizeRegions(const ImageMultipleRegionType &map)
 {
 	Ref<Image> tmpResultRef;
@@ -629,7 +749,7 @@ LocallyStationaryTextureSynthesizer::ImageVectorType LocallyStationaryTextureSyn
 					else
 					{
 						rng.set_seed(uint64_t(i * 3 + d));
-						pix = rng.randfn(0.5, 1.0);
+						pix = rng.randfn(0.5, 0.8);
 					}
 				}
 			});

@@ -169,6 +169,8 @@ private:
 	void precomputationsPrefiltering();
 	void precomputationsGaussian();
 	void precomputationsLocalPCAs();
+	void precomputationsLocalPCAsBetter();
+	void computeExemplarWithOnlyPCAOfRegion(ImageVectorType &texture, uint64_t region);
 	
 	ImageVectorType debug_visualizeRegions(const ImageMultipleRegionType &map);
 

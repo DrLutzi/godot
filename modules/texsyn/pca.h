@@ -22,8 +22,9 @@ public :
 
 	PCA();
 	PCA (const ImageType& input);
-	PCA (const ImageType& input, const ImageIDType &regionIDMap, uint64_t id);
+	PCA (const ImageType& input, const ImageIDType &regionIDMap, uint64_t id, bool inverseSelection = false);
 
+	void computePCA();
 	void computeProjection(unsigned int nbComponents = 0);
 	void project(ImageType &res);
 	void back_project(const ImageType &input, ImageType& output) const;
@@ -34,14 +35,14 @@ public :
 
 private:
 
-	bool useRegionIDMap() const;
-	void computeEigenVectors();
+	bool isRegionIDMapUsed() const;
 
 	// eigenvectors
 	VectorType m_eigenValues;
 	MatrixType m_eigenVectors;
 
 	MatrixType m_matrix;
+	MatrixType m_covariance;
 	MatrixType m_projection;
 	VectorType m_mean;
 	
@@ -55,6 +56,7 @@ PCA<T>::PCA():
 	m_eigenValues(),
 	m_eigenVectors(),
 	m_matrix(),
+	m_covariance(),
 	m_projection(),
 	m_mean(),
 	m_regionIDMap(),
@@ -67,6 +69,7 @@ PCA<T>::PCA(const ImageType &input) :
 	m_eigenValues(),
 	m_eigenVectors(),
 	m_matrix(),
+	m_covariance(),
 	m_projection(),
 	m_mean(),
 	m_regionIDMap(),
@@ -75,14 +78,14 @@ PCA<T>::PCA(const ImageType &input) :
 {
 	m_matrix.resize(input.get_width() * input.get_height(), input.get_nbDimensions());
 	fromImageVectorToMatrix(input, m_matrix);
-	computeEigenVectors();
 }
 
 template<typename T>
-PCA<T>::PCA (const ImageType& input, const ImageIDType &regionIDMap, uint64_t id) :
+PCA<T>::PCA (const ImageType& input, const ImageIDType &regionIDMap, uint64_t id, bool inverseSelection) :
 	m_eigenValues(),
 	m_eigenVectors(),
 	m_matrix(),
+	m_covariance(),
 	m_projection(),
 	m_mean(),
 	m_regionIDMap(regionIDMap),
@@ -90,37 +93,36 @@ PCA<T>::PCA (const ImageType& input, const ImageIDType &regionIDMap, uint64_t id
 	m_nbTexels(0)
 {
 	m_matrix.resize(input.get_width() * input.get_height(), input.get_nbDimensions());
-	m_nbTexels = fromImageVectorToMatrixWithRegionID(input, m_matrix, m_regionIDMap, m_id);
+	m_nbTexels = fromImageVectorToMatrixWithRegionID(input, m_matrix, m_regionIDMap, m_id, inverseSelection);
 	m_matrix.conservativeResize(m_nbTexels, input.get_nbDimensions());
-	computeEigenVectors();
 }
 
 template<typename T>
-bool PCA<T>::useRegionIDMap() const
+bool PCA<T>::isRegionIDMapUsed() const
 {
 	return m_regionIDMap.is_initialized();
 }
 
 template<typename T>
-void PCA<T>::computeEigenVectors()
+void PCA<T>::computePCA()
 {
-	// Subtract the mean from each column
+	m_eigenValues = VectorType::Zero(m_matrix.cols());
+	m_eigenVectors= MatrixType::Zero(m_matrix.cols(), m_matrix.cols());
+	//Subtract the mean from each column
 	m_mean = m_matrix.colwise().mean();
 	MatrixType centered = m_matrix.rowwise() - m_mean.transpose();
-
-	// Calculate the correlation matrix
-	MatrixType cov = centered.adjoint() * centered / double(centered.rows() - 1);
-
-	// Compute the eigenvectors and eigenvalues of the covariance matrix
-	Eigen::SelfAdjointEigenSolver<MatrixType> eigenSolver(cov);
-	m_eigenValues = eigenSolver.eigenvalues().reverse();
-	m_eigenVectors = eigenSolver.eigenvectors().reverse();
-
-	// Normalize the eigenvectors
-	for (int i = 0; i < m_eigenVectors.cols(); i++)
+	
+	if(centered.rows() > 1) //Check that covariance is non infinite
 	{
-		double norm = m_eigenVectors.col(i).norm();
-		m_eigenVectors.col(i) /= norm;
+		//Compute the covariance matrix
+		m_covariance = centered.adjoint() * centered / double(centered.rows() -1);
+		if(!m_covariance.isZero(5e-4)) //Check that covariance contains variations
+		{
+			//Compute the eigenvectors and eigenvalues of the covariance matrix
+			Eigen::SelfAdjointEigenSolver<MatrixType> eigenSolver(m_covariance);
+			m_eigenValues = eigenSolver.eigenvalues().reverse();
+			m_eigenVectors = eigenSolver.eigenvectors().reverse();
+		}
 	}
 }
 
@@ -138,7 +140,7 @@ void PCA<T>::computeProjection(unsigned int nbComponents)
 template<typename T>
 void PCA<T>::project(ImageType &res)
 {
-	if(useRegionIDMap())
+	if(isRegionIDMapUsed())
 	{
 		fromMatrixToImageVectorWithRegionID(m_projection, res, m_regionIDMap, m_id);
 	}
@@ -151,7 +153,7 @@ void PCA<T>::project(ImageType &res)
 template<typename T>
 void PCA<T>::back_project(const ImageType &input, ImageType &output) const
 {
-	if(useRegionIDMap())
+	if(isRegionIDMapUsed())
 	{
 		MatrixType matrix(m_nbTexels, input.get_nbDimensions());
 		fromImageVectorToMatrixWithRegionID(input, matrix, m_regionIDMap, m_id);

@@ -56,7 +56,7 @@ void fromMatrixToImageVector(const Eigen::MatrixXd &matrix, ImageVector<T> &imag
 /// \return the number of regions with this ID
 ///
 template<typename T>
-int fromImageVectorToMatrixWithRegionID(const ImageVector<T> &image, Eigen::MatrixXd &matrix, const ImageScalar<BitVector> &regionIDMap, uint64_t id)
+int fromImageVectorToMatrixWithRegionID(const ImageVector<T> &image, Eigen::MatrixXd &matrix, const ImageScalar<BitVector> &regionIDMap, uint64_t id, bool inverseSelection=false)
 {
 	//Assuming image has the correct dimensions
 	int nbTexels = 0;
@@ -67,7 +67,12 @@ int fromImageVectorToMatrixWithRegionID(const ImageVector<T> &image, Eigen::Matr
 		scalar.for_all_pixels([&] (const typename ImageVector<T>::DataType &pix, int x, int y)
 		{
 			ImageScalar<BitVector>::DataType region = regionIDMap.get_pixel(x, y);
-			if((region & id).toBool())
+			bool b = (region & id).toBool();
+			if(inverseSelection)
+			{
+				b = !b;
+			}
+			if(b)
 			{
 				matrix(j, i) = pix;
 				++j;
@@ -83,7 +88,7 @@ int fromImageVectorToMatrixWithRegionID(const ImageVector<T> &image, Eigen::Matr
 }
 
 template<typename T>
-int fromMatrixToImageVectorWithRegionID(const Eigen::MatrixXd &matrix, ImageVector<T> &image, const ImageScalar<BitVector> &regionIDMap, uint64_t id)
+int fromMatrixToImageVectorWithRegionID(const Eigen::MatrixXd &matrix, ImageVector<T> &image, const ImageScalar<BitVector> &regionIDMap, uint64_t id, bool inverseSelection=false)
 {
 	//Assuming image has the correct dimensions
 	int nbTexels = 0;
@@ -94,7 +99,12 @@ int fromMatrixToImageVectorWithRegionID(const Eigen::MatrixXd &matrix, ImageVect
 		scalar.for_all_pixels([&] (typename ImageVector<T>::DataType &pix, int x, int y)
 		{
 			ImageScalar<BitVector>::DataType region = regionIDMap.get_pixel(x, y);
-			if((region & id).toBool())
+			bool b = (region & id).toBool();
+			if(inverseSelection)
+			{
+				b = !b;
+			}
+			if(b)
 			{
 				pix = matrix(j, i);
 				++j;
