@@ -63,7 +63,7 @@ public:
 	int get_height() const;
 
 	void set_pixel(int x, int y, DataType value);
-    void set_rect(const ImageScalar &subImage, int size, int y);
+	void set_rect(const ImageScalar &subImage, int size, int y);
 
 	void fromImage(Ref<Image> image);
 	void toImage(Ref<Image> image, unsigned int channel) const;

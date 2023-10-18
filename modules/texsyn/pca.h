@@ -23,7 +23,8 @@ public :
 	PCA();
 	PCA (const ImageType& input);
 	PCA (const ImageType& input, const ImageIDType &regionIDMap, uint64_t id, bool inverseSelection = false);
-
+	PCA (const ImageType& input, const ImageScalarType &contribution);
+	
 	void computePCA();
 	void computeProjection(unsigned int nbComponents = 0);
 	void project(ImageType &res);
@@ -49,6 +50,8 @@ private:
 	ImageIDType m_regionIDMap;
 	uint64_t m_id;
 	int m_nbTexels;
+	
+	ImageScalarType m_contribution;
 };
 
 template<typename T>

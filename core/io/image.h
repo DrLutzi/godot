@@ -185,6 +185,7 @@ private:
 	int width = 0;
 	int height = 0;
 	bool mipmaps = false;
+	bool isAnIDMap = false;
 
 	void _copy_internals_from(const Image &p_image) {
 		format = p_image.format;
@@ -211,6 +212,7 @@ private:
 
 	Error _load_from_buffer(const Vector<uint8_t> &p_array, ImageMemLoadFunc p_loader);
 
+	static void merge_id_maps(uint32_t &p_out, const uint32_t &p_a, const uint32_t &p_b, const uint32_t &p_c, const uint32_t &p_d);
 	static void average_4_uint8(uint8_t &p_out, const uint8_t &p_a, const uint8_t &p_b, const uint8_t &p_c, const uint8_t &p_d);
 	static void average_4_float(float &p_out, const float &p_a, const float &p_b, const float &p_c, const float &p_d);
 	static void average_4_half(uint16_t &p_out, const uint16_t &p_a, const uint16_t &p_b, const uint16_t &p_c, const uint16_t &p_d);
@@ -226,6 +228,8 @@ public:
 	Size2i get_size() const;
 	bool has_mipmaps() const;
 	int get_mipmap_count() const;
+	
+	void mark_as_IDMap();
 
 	/**
 	 * Convert the image to another format, conversion only to raw byte format

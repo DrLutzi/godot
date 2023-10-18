@@ -12,7 +12,8 @@ sources = [
     "wasserstein.cpp",
     "colorsynthesisprototype.cpp",
     "gaussian_transfer.cpp",
-    "mipmaps.cpp"
+    "mipmaps.cpp",
+    "contentatlas.cpp"
 ]
 
 env_texsyn = env_modules.Clone()

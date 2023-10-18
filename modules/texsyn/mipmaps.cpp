@@ -71,6 +71,11 @@ const Mipmap::ImageType &Mipmap::mipmap(int i) const
 	return m_mipmap[i];
 }
 
+Mipmap::ImageType &Mipmap::mipmap(int i)
+{
+	return m_mipmap[i];
+}
+
 int Mipmap::nbMaps() const
 {
 	return m_mipmap.size();

@@ -465,6 +465,10 @@ int Image::get_mipmap_count() const {
 	}
 }
 
+void Image::mark_as_IDMap() {
+	isAnIDMap = true;
+}
+
 //using template generates perfectly optimized code due to constant expression reduction and unused variable removal present in all compilers
 template <uint32_t read_bytes, bool read_alpha, uint32_t write_bytes, bool write_alpha, bool read_gray, bool write_gray>
 static void _convert(int p_width, int p_height, const uint8_t *p_src, uint8_t *p_dst) {
@@ -1822,6 +1826,8 @@ Error Image::generate_mipmaps(bool p_renormalize) {
 	ERR_FAIL_COND_V_MSG(format == FORMAT_RGBA4444, ERR_UNAVAILABLE, "Cannot generate mipmaps from RGBA4444 format.");
 
 	ERR_FAIL_COND_V_MSG(width == 0 || height == 0, ERR_UNCONFIGURED, "Cannot generate mipmaps with width or height equal to 0.");
+	
+	ERR_FAIL_COND_V_MSG(isAnIDMap && format != FORMAT_RGBAF, ERR_UNAVAILABLE, "Cannot generate ID image mipmaps that are not RGBAF.");
 
 	int mmcount;
 
@@ -1878,7 +1884,10 @@ Error Image::generate_mipmaps(bool p_renormalize) {
 
 				break;
 			case FORMAT_RGBAF:
-				if (p_renormalize) {
+				if(isAnIDMap) {
+					_generate_po2_mipmap<uint32_t, 4, false, Image::merge_id_maps, Image::renormalize_rgbe9995>(reinterpret_cast<const uint32_t *>(&wp[prev_ofs]), reinterpret_cast<uint32_t *>(&wp[ofs]), prev_w, prev_h);
+				}
+				else if (p_renormalize) {
 					_generate_po2_mipmap<float, 4, true, Image::average_4_float, Image::renormalize_float>(reinterpret_cast<const float *>(&wp[prev_ofs]), reinterpret_cast<float *>(&wp[ofs]), prev_w, prev_h);
 				} else {
 					_generate_po2_mipmap<float, 4, false, Image::average_4_float, Image::renormalize_float>(reinterpret_cast<const float *>(&wp[prev_ofs]), reinterpret_cast<float *>(&wp[ofs]), prev_w, prev_h);
@@ -3926,6 +3935,11 @@ Error Image::_load_from_buffer(const Vector<uint8_t> &p_array, ImageMemLoadFunc 
 	copy_internals_from(image);
 
 	return OK;
+}
+
+//Custom function
+void Image::merge_id_maps(uint32_t &p_out, const uint32_t &p_a, const uint32_t &p_b, const uint32_t &p_c, const uint32_t &p_d) {
+	p_out = p_a | p_b | p_c | p_d;
 }
 
 void Image::average_4_uint8(uint8_t &p_out, const uint8_t &p_a, const uint8_t &p_b, const uint8_t &p_c, const uint8_t &p_d) {

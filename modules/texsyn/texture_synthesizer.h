@@ -151,12 +151,16 @@ public:
 	
 	void invTFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invTFilteredRef);
 	void invPCAFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invPCAFilteredRef);
+	void regionalContributionsToTexture2DArray(Ref<Texture2DArray> regionalContributionsRef);
+	void compactContributionsToTexture2DArray(Ref<Texture2DArray> compactContributionsRef);
 	
 	void computeInvT();
 	void computeGaussianExemplar();
 	
 	void computeExemplarInLocalPCAs();
 	void computeInvLocalPCAs();
+	
+	void groundTruthAtlasesTo2DArrayAlbedo(Ref<Texture2DArray> atlasesRef, Ref<Image> originsRef, Ref<Image> regionRef);
 	
 	void setDebugSaves(bool b);
 	void test();
@@ -169,7 +173,6 @@ private:
 	void precomputationsPrefiltering();
 	void precomputationsGaussian();
 	void precomputationsLocalPCAs();
-	void precomputationsLocalPCAsBetter();
 	void computeExemplarWithOnlyPCAOfRegion(ImageVectorType &texture, uint64_t region);
 	
 	ImageVectorType debug_visualizeRegions(const ImageMultipleRegionType &map);
@@ -189,6 +192,8 @@ private:
 	ImageVectorType m_exemplarPCA; //< stores the exemplar in local PCA spaces
 	ImageVectorType m_invPCA; //< stores the inverse local PCAs
 	LocalVector<ImageVectorType> m_invPCAPreFiltered; //< stores the pre-filtered inverse local PCAs
+	
+	LocalVector<TexSyn::Mipmap> m_regionsContributions; //< stores the contributions of each region
 };
 
 #define TEXSYN_TESTS

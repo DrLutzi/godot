@@ -135,6 +135,7 @@ public:
 	void computeMipmap();
 	void upsizeMipmap();
 	const ImageType &mipmap(int i) const;
+	ImageType &mipmap(int i);
 	int nbMaps() const;
 	
 private:
