@@ -492,9 +492,12 @@ void LocallyStationaryTextureSynthesizer::compactContributionsToTexture2DArray(R
 		contributions.get_image(1).for_all_pixels([&] (ImageScalarType::DataType &pix, int x, int y)
 		{
 			int region = m_regionsInt.get_pixel(x, y);
-			const TexSyn::Mipmap &map = m_regionsContributions[region];
-			const ImageScalarType &image = map.mipmap(k).get_image(0);
-			pix = image.get_pixel(x, y);
+			if(region != 0)
+			{
+				const TexSyn::Mipmap &map = m_regionsContributions[region];
+				const ImageScalarType &image = map.mipmap(k).get_image(0);
+				pix = image.get_pixel(x, y);
+			}
 		});
 		
 		Ref<Image> tmpResultRef = Image::create_empty(contributions.get_width(), contributions.get_height(), false, Image::FORMAT_RGF);
@@ -503,6 +506,64 @@ void LocallyStationaryTextureSynthesizer::compactContributionsToTexture2DArray(R
 		compactContributionsVectorRef.write[k]->copy_from(tmpResultRef);
 	}
 	compactContributionsRef->create_from_images(compactContributionsVectorRef);
+}
+
+void LocallyStationaryTextureSynthesizer::compactContributionsToImage(Ref<Image> compactContributionsRef)
+{
+	ERR_FAIL_COND_MSG(compactContributionsRef.is_null(), "regionalContributionsRef must not be null.");
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	ERR_FAIL_COND_MSG(m_regionsContributions.is_empty(), "computeExemplarInLocalPCAs() or computeInvLocalPCAs() should be called before this function.");
+	
+	//This version computes a mipmap instead of an array of images.
+	//The first channel contains the dominant region ID and the two (three one day?) others contain the contributions.
+	
+	TexSyn::Mipmap mipmap;
+	ImageVectorType contributions;
+	contributions.init(m_exemplar.get_width(), m_exemplar.get_height(), 3, true);
+	mipmap.setTexture(contributions);
+	mipmap.computeMipmap();
+	
+	for(int k=0; k<m_mipmapExemplar.nbMaps(); ++k)
+	{
+		ImageVectorType &contributions = mipmap.mipmap(k);
+		
+		//First dimension stores the contribution of the background
+		contributions.get_image(1).for_all_pixels([&] (ImageScalarType::DataType &pix, int x, int y)
+		{
+			const TexSyn::Mipmap &map = m_regionsContributions[0];
+			const ImageScalarType &image = map.mipmap(k).get_image(0);
+			pix = image.get_pixel(x, y);
+		});
+		contributions.get_image(2).for_all_pixels([&] (ImageScalarType::DataType &pix, int x, int y)
+		{
+			int maxRegion = 0;
+			if(k == 0) //small optimisation at highest resolution
+			{
+				maxRegion = m_regionsInt.get_pixel(x, y);
+				if(maxRegion != 0)
+				{
+					pix = 1.0;
+				}
+			}
+			else
+			{
+				for(unsigned int region=1; region<m_nbRegions; ++region)
+				{
+					const TexSyn::Mipmap &map = m_regionsContributions[region];
+					const ImageScalarType &image = map.mipmap(k).get_image(0);
+					float contribution = image.get_pixel(x, y);
+					if(contribution > pix)
+					{
+						pix = fmax(pix, image.get_pixel(x, y));
+						maxRegion = region;
+					}
+				}
+			}
+			contributions.get_image(0).set_pixel(x, y, float(maxRegion)/(m_nbRegions-1));
+		});
+	}
+	mipmap.toImage(compactContributionsRef, Image::FORMAT_RGBF);
 }
 
 void LocallyStationaryTextureSynthesizer::computeInvT()
@@ -566,78 +627,82 @@ void LocallyStationaryTextureSynthesizer::groundTruthAtlasesTo2DArrayAlbedo(Ref<
 	ERR_FAIL_COND_MSG(originsRef.is_null(), "origins must not be null.");
 	ERR_FAIL_COND_MSG(regionRef.is_null(), "region must not be null.");
 	
+	Ref<Image> tmpResultRef;
+	
 	//Computing atlases
 	
-	ContentAtlas contentAtlas;
+//	ContentAtlas contentAtlas;
 	
-	LocalVector<ImageVectorType> contents;
-	contents.resize(m_nbRegions);
+//	LocalVector<ImageVectorType> contents;
+//	contents.resize(m_nbRegions);
 	
-	for(unsigned int i=0; i<m_nbRegions; ++i)
-	{
-		computeExemplarWithOnlyPCAOfRegion(contents[i], i);
-	}
+//	for(unsigned int i=0; i<m_nbRegions; ++i)
+//	{
+//		computeExemplarWithOnlyPCAOfRegion(contents[i], i);
+//	}
 	
-	contentAtlas.setRegionMap(m_multiIdMap, m_nbRegions);
-	contentAtlas.setContentsFromAllVersions(contents);
-	contentAtlas.setContributions(m_regionsContributions);
+//	contentAtlas.setRegionMap(m_multiIdMap, m_nbRegions);
+//	contentAtlas.setContentsFromAllVersions(contents);
+//	contentAtlas.setContributions(m_regionsContributions);
 	
-	contentAtlas.computeAllAtlases();
-	
+//	contentAtlas.computeAllAtlases();
 	
 	//Exporting atlases
-	Vector<Ref<Image>> atlasVectorRef;
-	atlasVectorRef.resize(m_nbRegions);
+//	Vector<Ref<Image>> atlasVectorRef;
+//	atlasVectorRef.resize(m_nbRegions);
 	
-	for(unsigned int i=0; i<m_nbRegions; ++i)
-	{
-		const ImageVectorType &atlas = contentAtlas.atlasVector()[i];
-		Ref<Image> tmpResultRef = Image::create_empty(atlas.get_width(), atlas.get_height(), false, Image::FORMAT_RGBF);
-		atlas.toImage(tmpResultRef);
-		atlasVectorRef.write[i].instantiate();
-		atlasVectorRef.write[i]->copy_from(tmpResultRef);
-		if(m_debugSaves)
-		{
-			atlasVectorRef[i]->save_png(String("debug/atlasGroundTruth_num.png").replace("num", String::num_int64(i)));
-		}
-	}
-	atlasesRef->create_from_images(atlasVectorRef);
+//	for(unsigned int i=0; i<m_nbRegions; ++i)
+//	{
+//		const ImageVectorType &atlas = contentAtlas.atlasVector()[i];
+//		Ref<Image> tmpResultRef = Image::create_empty(atlas.get_width(), atlas.get_height(), false, Image::FORMAT_RGBF);
+//		atlas.toImage(tmpResultRef);
+//		atlasVectorRef.write[i].instantiate();
+//		atlasVectorRef.write[i]->copy_from(tmpResultRef);
+//		if(m_debugSaves)
+//		{
+//			atlasVectorRef[i]->save_png(String("debug/atlasGroundTruth_num.png").replace("num", String::num_int64(i)));
+//		}
+//	}
+//	atlasesRef->create_from_images(atlasVectorRef);
 	
-	//Exporting origins
-	ImageVectorType origins = contentAtlas.originTexture();
-	Ref<Image> tmpResultRef = Image::create_empty(origins.get_width(), origins.get_height(), false, Image::FORMAT_RGBF);
-	origins.toImage(tmpResultRef);
-	originsRef->copy_from(tmpResultRef);
+//	//Exporting origins
+//	ImageVectorType origins = contentAtlas.originTexture();
+//	tmpResultRef = Image::create_empty(origins.get_width(), origins.get_height(), false, Image::FORMAT_RGBF);
+//	origins.toImage(tmpResultRef);
+//	originsRef->copy_from(tmpResultRef);
 	
 	//Exporting region map, using custom Image class code
 	ImageVectorType imageRegionReadable;
 	using BitVector = TexSyn::BitVector;
 	const TexSyn::ImageScalar<BitVector> &multiIDMap = m_mipmapMultiIDMap.mipmap(0);
 	imageRegionReadable.init(multiIDMap.get_width(), multiIDMap.get_height(), 4, false);
-	imageRegionReadable.get_image(0).for_all_pixels([&] (ImageVectorType::DataType &pix, int x, int y)
+	for(int y=0; y<multiIDMap.get_height(); ++y)
 	{
-		BitVector bit = multiIDMap.get_pixel(x, y);
-		uint32_t pix32 = bit.lo & 0xffffffff;
-		reinterpret_cast<uint32_t &>(pix) = pix32;
-	});
-	imageRegionReadable.get_image(1).for_all_pixels([&] (ImageVectorType::DataType &pix, int x, int y)
-	{
-		BitVector bit = multiIDMap.get_pixel(x, y);
-		uint32_t pix32 = (bit.lo >> 32) & 0xffffffff;
-		reinterpret_cast<uint32_t &>(pix) = pix32;
-	});
-	imageRegionReadable.get_image(2).for_all_pixels([&] (ImageVectorType::DataType &pix, int x, int y)
-	{
-		BitVector bit = multiIDMap.get_pixel(x, y);
-		uint32_t pix32 = bit.hi & 0xffffffff;
-		reinterpret_cast<uint32_t &>(pix) = pix32;
-	});
-	imageRegionReadable.get_image(3).for_all_pixels([&] (ImageVectorType::DataType &pix, int x, int y)
-	{
-		BitVector bit = multiIDMap.get_pixel(x, y);
-		uint32_t pix32 = (bit.hi >> 32) & 0xffffffff;
-		reinterpret_cast<uint32_t &>(pix) = pix32;
-	});
+		for(int x=0; x<multiIDMap.get_width(); ++x)
+		{
+			BitVector bit = multiIDMap.get_pixel(x, y);
+			
+			uint32_t pix32 = bit.lo & 0xffffffff;
+			ImageVectorType::DataType &pix3 = imageRegionReadable.get_pixelRef(x, y, 3);
+			reinterpret_cast<uint32_t &>(pix3) = pix32;
+//			print_line(String("a: bit at xx, yy: val").replace("val", String::num_uint64(pix32)).replace("xx", String::num_int64(x)).replace("yy", String::num_int64(y)));
+
+			pix32 = (bit.lo >> 32) & 0xffffffff;
+			ImageVectorType::DataType &pix2 = imageRegionReadable.get_pixelRef(x, y, 2);
+			reinterpret_cast<uint32_t &>(pix2) = pix32;
+//			print_line(String("b: bit at xx, yy: val").replace("val", String::num_uint64(pix32)).replace("xx", String::num_int64(x)).replace("yy", String::num_int64(y)));
+			
+			pix32 = bit.hi & 0xffffffff;
+			ImageVectorType::DataType &pix1 = imageRegionReadable.get_pixelRef(x, y, 1);
+			reinterpret_cast<uint32_t &>(pix1) = pix32;
+//			print_line(String("g: bit at xx, yy: val").replace("val", String::num_uint64(pix32)).replace("xx", String::num_int64(x)).replace("yy", String::num_int64(y)));
+			
+			pix32 = (bit.hi >> 32) & 0xffffffff;
+			ImageVectorType::DataType &pix0 = imageRegionReadable.get_pixelRef(x, y, 0);
+			reinterpret_cast<uint32_t &>(pix0) = pix32;
+//			print_line(String("r: bit at xx, yy: val").replace("val", String::num_uint64(pix32)).replace("xx", String::num_int64(x)).replace("yy", String::num_int64(y)));
+		}
+	}
 	tmpResultRef = Image::create_empty(multiIDMap.get_width(), multiIDMap.get_height(), true, Image::FORMAT_RGBAF);
 	tmpResultRef->mark_as_IDMap(); //custom code
 	imageRegionReadable.toImage(tmpResultRef);
@@ -706,13 +771,18 @@ void LocallyStationaryTextureSynthesizer::precomputationsGaussian()
 
 void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 {
+#define ADDGLOBALPCA
 	precomputationsPrefiltering();
 	m_mipmapMultiIDMap.upsizeMipmap();
 	m_mipmapExemplar.upsizeMipmap();
 	//computing local PCAs, projected exemplar, and packing inverse PCA infos
 	m_exemplarPCA.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
 	LocalVector<PCAType> localPCAs;
-	m_invPCA.init(1+m_exemplar.get_nbDimensions(), m_nbRegions, m_exemplar.get_nbDimensions(), true);
+	unsigned int regionOffset = 0;
+#ifdef ADDGLOBALPCA
+	regionOffset = 1;
+#endif
+	m_invPCA.init(1+m_exemplar.get_nbDimensions(), m_nbRegions+regionOffset, m_exemplar.get_nbDimensions(), true);
 	for(unsigned int i=0; i<m_nbRegions; ++i)
 	{
 		localPCAs.push_back(PCAType(m_exemplar, m_multiIdMap, uint64_t(i)));
@@ -725,14 +795,37 @@ void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 		//filling invPCA: at x=0, mean, and then eigen vectors
 		for(unsigned int d=0; d<m_exemplar.get_nbDimensions(); ++d)
 		{
-			m_invPCA.set_pixel(0, i, d, localMean[d]);
+			m_invPCA.set_pixel(0, i+regionOffset, d, localMean[d]);
 			for(int r=0; r<localEigenVectors.rows(); ++r)
 			{
-				m_invPCA.set_pixel(r+1, i, d, localEigenVectors(r, d));
+				m_invPCA.set_pixel(r+1, i+regionOffset, d, localEigenVectors(r, d));
 			}
 		}
 	}
 	
+#ifdef ADDGLOBALPCA
+	//Sneaky insertion of the global PCA in the first position of the pack
+	ImageMultipleRegionType foregroundRegions;
+	foregroundRegions.init(m_exemplar.get_width(), m_exemplar.get_width(), true);
+	foregroundRegions.for_all_pixels([&] (ImageMultipleRegionType::DataType &pix, int x, int y)
+	{
+		ImageRegionType::DataType region = m_regionsInt.get_pixel(x, y);
+		pix |= region == 0 ? 0 : 1;
+	});
+	PCAType globalPCA(m_exemplar, foregroundRegions, 1);
+	globalPCA.computePCA();
+	PCAType::MatrixType localEigenVectors = globalPCA.get_eigenVectors().transpose();
+	PCAType::VectorType localMean = globalPCA.get_mean();
+	for(unsigned int d=0; d<m_exemplar.get_nbDimensions(); ++d)
+	{
+		m_invPCA.set_pixel(0, 0, d, localMean[d]);
+		for(int r=0; r<localEigenVectors.rows(); ++r)
+		{
+			m_invPCA.set_pixel(r+1, 0, d, localEigenVectors(r, d));
+		}
+	}
+#endif
+
 	for(unsigned int i=0; i<m_nbRegions; ++i)
 	{
 		ImageVectorType pcaTextureRegion;
@@ -743,6 +836,8 @@ void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
 	m_invPCAPreFiltered.resize(m_mipmapExemplar.nbMaps());
 	LocalVector<LocalVector<PCAType>> localPCAsPreFiltered;
 	localPCAsPreFiltered.resize(m_mipmapExemplar.nbMaps());
+	
+
 	for(unsigned int k=0; k<localPCAsPreFiltered.size(); ++k)
 	{
 		LocalVector<PCAType> &localPCAs = localPCAsPreFiltered[k];
@@ -875,6 +970,7 @@ void LocallyStationaryTextureSynthesizer::_bind_methods()
 	ClassDB::bind_method(D_METHOD("invPCAFilteredToTexture2DArrayAlbedo", "invPCAFilteredRef"), &LocallyStationaryTextureSynthesizer::invPCAFilteredToTexture2DArrayAlbedo);
 	ClassDB::bind_method(D_METHOD("regionalContributionsToTexture2DArray", "regionalContributionsRef"), &LocallyStationaryTextureSynthesizer::regionalContributionsToTexture2DArray);
 	ClassDB::bind_method(D_METHOD("compactContributionsToTexture2DArray", "compactContributionsRef"), &LocallyStationaryTextureSynthesizer::compactContributionsToTexture2DArray);
+	ClassDB::bind_method(D_METHOD("compactContributionsToImage", "compactContributionsRef"), &LocallyStationaryTextureSynthesizer::compactContributionsToImage);
 	ClassDB::bind_method(D_METHOD("groundTruthAtlasesTo2DArrayAlbedo", "atlasesRef", "originsRef", "regionRef"), &LocallyStationaryTextureSynthesizer::groundTruthAtlasesTo2DArrayAlbedo);
 	ClassDB::bind_method(D_METHOD("computeInvT"), &LocallyStationaryTextureSynthesizer::computeInvT);
 	ClassDB::bind_method(D_METHOD("computeGaussianExemplar"), &LocallyStationaryTextureSynthesizer::computeGaussianExemplar);

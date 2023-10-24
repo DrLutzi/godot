@@ -67,9 +67,11 @@ public:
 
 	void fromImage(Ref<Image> image);
 	void toImage(Ref<Image> image) const;
+	void toImageReinterpret(Ref<Image> image) const;
 
 	void fromImageIndexed(Ref<Image> image, unsigned int startIndex); //For anything more than RGBA
 	void toImageIndexed(Ref<Image> image, unsigned int startIndex) const;
+	void toImageIndexedReinterpret(Ref<Image> image, unsigned int startIndex) const;
 
 	ImageVector<T> &operator=(const ImageVector<T> &other);
 
@@ -265,7 +267,7 @@ template<typename T>
 typename ImageVector<T>::DataType &ImageVector<T>::get_pixelRef(int x, int y, int d)
 {
 	TEXSYN_ASSERT_DIMENSIONS_AND_IN_BOUNDS(x, y, d);
-	return const_cast<DataType &>(get_pixelRef(x, y, d));
+	return m_images[d].get_pixelRef(x, y);
 }
 
 template<typename T>
@@ -375,6 +377,20 @@ void ImageVector<T>::toImage(Ref<Image> image) const
 }
 
 template<typename T>
+void ImageVector<T>::toImageReinterpret(Ref<Image> image) const
+{
+	TEXSYN_ASSERT_INITIALIZED();
+	ERR_FAIL_COND_MSG(image.ptr() == nullptr, "image must not be null, and must be locked for write access.");
+	unsigned int nbDimensionsFormat=getNbDimensionsFromFormat(image.ptr()->get_format());
+	unsigned int maxDimensions = MIN(nbDimensionsFormat, get_nbDimensions());
+	for(unsigned int i=0; i<maxDimensions; ++i)
+	{
+		m_images[i].toImageReinterpret(image, i);
+	}
+	return;
+}
+
+template<typename T>
 void ImageVector<T>::fromImageIndexed(Ref<Image> image, unsigned int startIndex)
 {
 	ERR_FAIL_COND_MSG(image.ptr() == nullptr, "image must not be null, and must be locked for read access.");
@@ -410,6 +426,24 @@ void ImageVector<T>::toImageIndexed(Ref<Image> image, unsigned int startIndex) c
 	for(unsigned int i=startIndex; i<endIndex; ++i)
 	{
 		m_images[i].toImage(image, i-startIndex);
+	}
+	return;
+}
+
+template<typename T>
+void ImageVector<T>::toImageIndexedReinterpret(Ref<Image> image, unsigned int startIndex) const
+{
+	TEXSYN_ASSERT_INITIALIZED();
+	ERR_FAIL_COND_MSG(image.ptr() == nullptr, "image must not be null, and must be locked for write access.");
+	unsigned int nbDimensionsFormat=getNbDimensionsFromFormat(image.ptr()->get_format());
+	unsigned int endIndex = startIndex+nbDimensionsFormat;
+	ERR_FAIL_COND_MSG(get_nbDimensions() < endIndex,
+					  "image does not fit in this ImageVector from provided startIndex (try increasing its number of dimensions and check image format?).");
+	ERR_FAIL_COND_MSG(image->get_width() != get_width() || image->get_height() != get_height(),
+					  "size of image is different from size of this ImageVector.");
+	for(unsigned int i=startIndex; i<endIndex; ++i)
+	{
+		m_images[i].toImageReinterpret(image, i-startIndex);
 	}
 	return;
 }

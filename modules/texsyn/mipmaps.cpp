@@ -81,6 +81,34 @@ int Mipmap::nbMaps() const
 	return m_mipmap.size();
 }
 
+void Mipmap::toImage(Ref<Image> image, Image::Format format)
+{
+	ERR_FAIL_COND_MSG(image.is_null(), "image must not be null.");
+	ERR_FAIL_COND_MSG(m_mipmap.size() == 0, "mipmap must be set.");
+	//TODO: check if mipmap was not resized
+	
+	if(format == Image::FORMAT_MAX)
+	{
+		format = image->get_format();
+	}
+	
+	bool use_mipmaps = m_mipmap.size() > 1;
+	
+	Vector<uint8_t> fullData;
+	for(unsigned int i=0; i<m_mipmap.size(); ++i)
+	{
+		const ImageType &texsynImage = m_mipmap[i];
+		Ref<Image> gdImage = Image::create_empty(texsynImage.get_width(), texsynImage.get_height(), false, format);
+		texsynImage.toImage(gdImage);
+		Vector<uint8_t> data = gdImage->get_data();
+		for(int j=0; j<data.size(); ++j)
+		{
+			fullData.push_back(data[j]);
+		}
+	}
+	image->set_data(m_mipmap[0].get_width(), m_mipmap[0].get_height(), use_mipmaps, format, fullData);
+}
+
 MipmapMultiIDMap::MipmapMultiIDMap() :
 	m_mipmap()
 {}

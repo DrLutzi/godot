@@ -138,6 +138,8 @@ public:
 	ImageType &mipmap(int i);
 	int nbMaps() const;
 	
+	void toImage(Ref<Image> image, Image::Format format = Image::FORMAT_MAX);
+	
 private:
 	ImageArrayType m_mipmap;
 };

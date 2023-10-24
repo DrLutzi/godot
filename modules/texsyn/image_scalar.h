@@ -67,6 +67,7 @@ public:
 
 	void fromImage(Ref<Image> image);
 	void toImage(Ref<Image> image, unsigned int channel) const;
+	void toImageReinterpret(Ref<Image> image, unsigned int channel) const;
 
 	const VectorType &get_vector() const;
 	VectorType &get_vector();
@@ -424,7 +425,19 @@ void ImageScalar<T>::toImage(Ref<Image> image, unsigned int channel) const
 	for_all_pixels([&] (const DataType &pix, int x, int y)
 	{
 		Color c = image->get_pixel(x, y);
-		c[channel] = DataType(pix);
+		c[channel] = pix;
+		image->set_pixel(x, y, c);
+	});
+}
+
+template<typename T>
+void ImageScalar<T>::toImageReinterpret(Ref<Image> image, unsigned int channel) const
+{
+	TEXSYN_ASSERT_INITIALIZED();
+	for_all_pixels([&] (const DataType &pix, int x, int y)
+	{
+		Color c = image->get_pixel(x, y);
+		c[channel] = reinterpret_cast<const float &>(pix);
 		image->set_pixel(x, y, c);
 	});
 }

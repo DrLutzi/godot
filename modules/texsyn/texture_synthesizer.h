@@ -153,6 +153,7 @@ public:
 	void invPCAFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invPCAFilteredRef);
 	void regionalContributionsToTexture2DArray(Ref<Texture2DArray> regionalContributionsRef);
 	void compactContributionsToTexture2DArray(Ref<Texture2DArray> compactContributionsRef);
+	void compactContributionsToImage(Ref<Image> compactContributionsRef);
 	
 	void computeInvT();
 	void computeGaussianExemplar();
