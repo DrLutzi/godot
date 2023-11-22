@@ -151,6 +151,7 @@ public:
 	
 	void invTFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invTFilteredRef);
 	void invPCAFilteredToTexture2DArrayAlbedo(Ref<Texture2DArray> invPCAFilteredRef);
+	void invTAndPCAToTexture2DArrayAlbedo(Ref<Texture2DArray> invFilteredRef);
 	void regionalContributionsToTexture2DArray(Ref<Texture2DArray> regionalContributionsRef);
 	void compactContributionsToTexture2DArray(Ref<Texture2DArray> compactContributionsRef);
 	void compactContributionsToImage(Ref<Image> compactContributionsRef);
@@ -175,6 +176,7 @@ private:
 	void precomputationsGaussian();
 	void precomputationsLocalPCAs();
 	void computeExemplarWithOnlyPCAOfRegion(ImageVectorType &texture, uint64_t region);
+	ImageVectorType::VectorType footprintVariance(const ImageVectorType &texture, unsigned int level, uint64_t region);
 	
 	ImageVectorType debug_visualizeRegions(const ImageMultipleRegionType &map);
 

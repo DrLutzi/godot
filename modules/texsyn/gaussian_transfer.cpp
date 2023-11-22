@@ -3,6 +3,9 @@
 #include <algorithm>
 #include "gaussian_transfer.h"
 
+//Code adapted from Thomas Deliot's OpenGL code
+//
+
 namespace TexSyn {
 
 double GaussianTransfer::Erf(double x)
@@ -78,7 +81,7 @@ void GaussianTransfer::toMultipleRegions(ImageMultipleRegionMapType &imageMultip
 
 GaussianTransfer::GaussianTransfer() :
 	m_mean(0.5),
-	m_variance(1.0/10.0)
+	m_variance(1.0/6.0)
 {}
 
 void GaussianTransfer::setMean(DataType mean)
@@ -305,6 +308,53 @@ void GaussianTransfer::computeinvTMultipleRegions(const ImageType &input, const 
 				Tinv.set_pixel(i, id, d, value);
 			}
 		}
+	}
+}
+
+// Filter LUT by sampling a Gaussian N(mu, std²)
+float GaussianTransfer::filterLUTValueAtx(ImageType& LUT, float x, int region, float std, int channel)
+{
+	// Number of samples for filtering (heuristic: twice the LUT resolution)
+	const int lutWidth = 128;
+	const int numberOfSamples = 2 * lutWidth;
+
+	// Filter
+	DataType filtered_value = 0.0f;
+	for (int sample = 0; sample < numberOfSamples; sample++)
+	{
+		// Quantile used to sample the Gaussian
+		DataType U = (sample + 0.5f) / numberOfSamples;
+		// Sample the Gaussian 
+		DataType sample_x = invCDF(U, x, std);
+		// Find sample texel in LUT (the LUT covers the domain [0, 1])
+		int sample_texel = fmax(0, fmin(lutWidth - 1, (int)floor(sample_x * lutWidth)));
+		// Fetch LUT at level 0
+		DataType sample_value = LUT.get_pixel(sample_texel, region, channel);
+		// Accumulate
+		filtered_value += sample_value;
+	}
+	// Normalize and return
+	filtered_value /= (float) numberOfSamples;
+	return filtered_value;
+}
+
+// Main function of section 1.5
+void GaussianTransfer::prefilterLUT(ImageType& LUT_Tinv, DataType variance, uint64_t region, int channel)
+{
+	// Compute number of prefiltered levels and resize LUT
+	// Prefilter 
+	// Compute subpixel variance at LOD 
+	float window_std = sqrtf(variance);
+
+	// Prefilter LUT with Gaussian kernel of this variance
+	for (int i = 0; i < LUT_Tinv.get_width(); i++)
+	{
+		// Texel position in [0, 1]
+		float x_texel = (i+0.5f) / LUT_Tinv.get_width();
+		// Filter look-up table around this position with Gaussian kernel
+		float filteredValue = filterLUTValueAtx(LUT_Tinv, x_texel, region, window_std, channel);
+		// Store filtered value
+		LUT_Tinv.set_pixel(i, region, channel, filteredValue);
 	}
 }
 

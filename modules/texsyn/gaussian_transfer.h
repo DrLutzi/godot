@@ -49,6 +49,8 @@ public:
 	void computeinvT(const ImageType &input, ImageType &Tinv);
 	void computeinvTRegions(const ImageType &input, const ImageRegionMapType &regionMap, ImageType &Tinv, bool includeZero=false);
 	void computeinvTMultipleRegions(const ImageType &input, const ImageMultipleRegionMapType &multipleRegionMap, ImageType &Tinv, bool includeZero=false);
+	float filterLUTValueAtx(ImageType& LUT, float x, int region, float std, int channel);
+	void prefilterLUT(ImageType& LUT_Tinv, DataType variance, uint64_t region, int channel);
 	static void invT(VectorType &p, const ImageType &Tinv);
 	static void invTRegions(VectorType &p, const ImageType &Tinv, int regionID);
 	static ImageType invT(const ImageType &input, const ImageType &Tinv);

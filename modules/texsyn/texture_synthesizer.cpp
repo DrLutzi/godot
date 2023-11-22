@@ -274,6 +274,8 @@ void LocallyStationaryTextureSynthesizer::setRegionMap(Ref<Image> regions)
 {
 	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
 
+	const int minSize = 512;
+
 	//collecting all the ids
 	using MapType = HashMap<Color, int>;
 	MapType histogramRegions;
@@ -282,7 +284,7 @@ void LocallyStationaryTextureSynthesizer::setRegionMap(Ref<Image> regions)
 	m_regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix, int x, int y)
 	{
 		Color c = regions->get_pixel(x, y);
-		if(c.is_equal_approx(Color(1, 1, 1)))
+		if(c.is_equal_approx(Color(1, 1, 1)) || c.is_equal_approx(Color(0, 0, 0)))
 		{
 			pix = 0;
 		}
@@ -302,6 +304,42 @@ void LocallyStationaryTextureSynthesizer::setRegionMap(Ref<Image> regions)
 		}
 	});
 	
+	Vector<int> count;
+	count.resize(m_nbRegions);
+	//Count region areas
+	m_regionsInt.for_all_pixels([&] (const ImageRegionType::DataType &pix)
+	{
+		++count.write[pix];
+	});
+	
+	//Curate regions that are too small and can cause issue with histogram transfer
+	ImageRegionType::DataType regionOffset=0;
+	ImageRegionType::DataType lastCuratedRegion=0;
+	unsigned int newNbRegions = m_nbRegions;
+	for(ImageRegionType::DataType i=0; i<m_nbRegions; ++i)
+	{
+		m_regionsInt.for_all_pixels([&] (ImageRegionType::DataType &pix)
+		{
+			if(pix == i)
+			{
+				if(count[pix]<minSize)
+				{
+					if(lastCuratedRegion != pix)
+					{
+						lastCuratedRegion = pix;
+						++regionOffset;
+						--newNbRegions;
+					}
+					pix = 0;
+				}
+				else
+				{
+					pix -= regionOffset;
+				}
+			}
+		});
+	}
+	m_nbRegions = newNbRegions;
 	//Pre-computing the region mask bitmask version
 	TexSyn::GaussianTransfer::toMultipleRegions(m_multiIdMap, m_regionsInt);
 }
@@ -338,7 +376,6 @@ void LocallyStationaryTextureSynthesizer::originsMapToImage(Ref<Image> origins)
 		imageVectorOrigins.set_pixel(otherID, 0, 0, dx);
 		imageVectorOrigins.set_pixel(otherID, 0, 1, dy);
 	}
-	
 	{
 		Ref<Image> tmpResultRef;
 		tmpResultRef = Image::create_empty(imageVectorOrigins.get_width(), imageVectorOrigins.get_height(), false, Image::FORMAT_RGF);
@@ -426,6 +463,139 @@ void LocallyStationaryTextureSynthesizer::invPCAFilteredToTexture2DArrayAlbedo(R
 		}
 	}
 	invPCAFilteredRef->create_from_images(invPCAVectorRef);
+}
+
+void LocallyStationaryTextureSynthesizer::invTAndPCAToTexture2DArrayAlbedo(Ref<Texture2DArray> invFilteredRef)
+{
+	ERR_FAIL_COND_MSG(invFilteredRef.is_null(), "invTFilteredRef must not be null.");
+	ERR_FAIL_COND_MSG(!m_regionsInt.is_initialized(), "region map must be set with setRegionMap().");
+	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
+	
+	if(!m_exemplarPCA.is_initialized())
+	{
+		precomputationsLocalPCAs();
+	}
+	if(!m_invT.is_initialized())
+	{
+		precomputationsGaussian();
+	}
+	
+	Vector<ImageVectorType> invFiltered;
+	
+	invFiltered.resize(m_mipmapMultiIDMap.nbMaps());
+	invFiltered.write[0] = m_invT;
+	
+	for(int i=1; i<invFiltered.size(); ++i)
+	{
+		const ImageVectorType &firstInvT = invFiltered[0];
+		//copy the histogram and apply a Gaussian kernel to it
+		invFiltered.write[i] = firstInvT;
+		ImageVectorType &currentInvT = invFiltered.write[i];
+		int windowWidth = int(pow(2.0f, float(i)));
+		
+		for(int y=0; y<currentInvT.get_height(); ++y)
+		{
+			//Computing the average variance over the size of the window
+			ImageVectorType::VectorType variance = footprintVariance(m_TG, i, uint64_t(y));
+			for(unsigned int d=0; d<m_TG.get_nbDimensions(); ++d)
+			{
+				m_gst.prefilterLUT(currentInvT, variance[d], uint64_t(y), d);
+			}
+		}
+	}
+	
+	Vector<Ref<Image>> invVectorRef;
+	invVectorRef.resize(m_mipmapMultiIDMap.nbMaps());
+	
+	for(int i=0; i<invVectorRef.size(); ++i)
+	{
+		Ref<Image> tmpResultRef = Image::create_empty(invFiltered[i].get_width(), invFiltered[i].get_height(), false, Image::FORMAT_RGBF);
+		invFiltered[i].toImageIndexed(tmpResultRef, 0);
+		invVectorRef.write[i].instantiate();
+		invVectorRef.write[i]->copy_from(tmpResultRef);
+		//Optionnal previsualisation save
+		if(m_debugSaves)
+		{
+			invVectorRef.write[i]->save_png(String("debug/invTFiltered_num.png").replace("num", String::num_int64(i)));
+		}
+	}
+	invFilteredRef->create_from_images(invVectorRef);
+	
+	if(!m_debugSaves)
+	{
+		return;
+	}
+	
+	//Test inverse histogram transfer + inverse PCA once
+	ImageVectorType outputTest;
+	outputTest.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
+	for(int x=0; x<outputTest.get_width(); ++x)
+	{
+		for(int y=0; y<outputTest.get_height(); ++y)
+		{
+			int region = m_regionsInt.get_pixel(x, y);
+			srand(region+10);
+			int newRegion = rand()%m_nbRegions;
+			
+			ImageVectorType::VectorType input = m_TG.get_pixel(x, y);
+			int r, g, b;
+			r = MAX(0, MIN(input[0]*(m_invT.get_width()-1), m_invT.get_width()-1));
+			g = MAX(0, MIN(input[1]*(m_invT.get_width()-1), m_invT.get_width()-1));
+			b = MAX(0, MIN(input[2]*(m_invT.get_width()-1), m_invT.get_width()-1));
+			ImageVectorType::VectorType inputPCA;
+			inputPCA.resize(3);
+			inputPCA.write[0] = m_invT.get_pixel(r, newRegion, 0);
+			inputPCA.write[1] = m_invT.get_pixel(g, newRegion, 1);
+			inputPCA.write[2] = m_invT.get_pixel(b, newRegion, 2);
+			outputTest.set_pixel(x, y, inputPCA);
+		}
+	}
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(outputTest.get_width(), outputTest.get_height(), false, Image::FORMAT_RGBF);
+		outputTest.toImageIndexed(tmpResultRef, 0);
+		tmpResultRef->save_png("testFullInversePCASpace.png");
+	}
+	for(int x=0; x<outputTest.get_width(); ++x)
+	{
+		for(int y=0; y<outputTest.get_height(); ++y)
+		{
+			int region = m_regionsInt.get_pixel(x, y);
+			srand(region+10);
+			int newRegion = rand()%m_nbRegions;
+			
+			ImageVectorType::VectorType inputPCA = outputTest.get_pixel(x, y);
+			for(int d=0; d<inputPCA.size(); ++d)
+			{
+				inputPCA.write[d] -= 0.5f;
+			}
+			
+			ImageVectorType::VectorType mean = m_invPCA.get_pixel(0, newRegion+1);
+			ImageVectorType::VectorType p1 = m_invPCA.get_pixel(1, newRegion+1);
+			ImageVectorType::VectorType p2 = m_invPCA.get_pixel(2, newRegion+1);
+			ImageVectorType::VectorType p3 = m_invPCA.get_pixel(3, newRegion+1);
+			
+			ImageVectorType::VectorType v = mean;
+			v.write[0] += inputPCA[0]*p1[0] + inputPCA[1]*p2[0] + inputPCA[2]*p3[0];
+			v.write[1] += inputPCA[0]*p1[1] + inputPCA[1]*p2[1] + inputPCA[2]*p3[1];
+			v.write[2] += inputPCA[0]*p1[2] + inputPCA[1]*p2[2] + inputPCA[2]*p3[2];
+			outputTest.set_pixel(x, y, v);
+		}
+	}
+	{
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(outputTest.get_width(), outputTest.get_height(), false, Image::FORMAT_RGBF);
+		outputTest.toImageIndexed(tmpResultRef, 0);
+		tmpResultRef->save_png("testFullInverse.png");
+	}
+	
+	//Executing a transfer for each region
+	for(uint64_t i=0; i<m_nbRegions; ++i)
+	{
+		ImageVectorType imageWithExclusiveTransfer;
+		computeExemplarWithOnlyPCAOfRegion(imageWithExclusiveTransfer, i);
+	}
+	
 }
 
 void LocallyStationaryTextureSynthesizer::regionalContributionsToTexture2DArray(Ref<Texture2DArray> regionalContributionsRef)
@@ -572,7 +742,8 @@ void LocallyStationaryTextureSynthesizer::computeInvT()
 	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
 	if(!m_invT.is_initialized())
 	{
-		computeImageVector();
+		if(!m_exemplar.is_initialized())
+			computeImageVector();
 		precomputationsGaussian();
 	}
 	m_outputImageVector = m_invT;
@@ -584,7 +755,8 @@ void LocallyStationaryTextureSynthesizer::computeGaussianExemplar()
 	ERR_FAIL_COND_MSG(m_imageRefs.is_empty(), "one or more components must be set with setComponent().");
 	if(!m_TG.is_initialized())
 	{
-		computeImageVector();
+		if(!m_exemplar.is_initialized())
+			computeImageVector();
 		precomputationsGaussian();
 	}
 	m_outputImageVector = m_TG;
@@ -712,6 +884,8 @@ void LocallyStationaryTextureSynthesizer::groundTruthAtlasesTo2DArrayAlbedo(Ref<
 
 void LocallyStationaryTextureSynthesizer::precomputationsPrefiltering()
 {
+	if(m_mipmapMultiIDMap.nbMaps()>0)
+		return;
 	m_mipmapMultiIDMap.setIDMap(m_multiIdMap);
 	m_mipmapMultiIDMap.computeMipmap();
 
@@ -762,11 +936,27 @@ void LocallyStationaryTextureSynthesizer::precomputationsPrefiltering()
 void LocallyStationaryTextureSynthesizer::precomputationsGaussian()
 {
 	//Pre-computation of invT
-	m_invT.init(128, m_nbRegions, m_exemplar.get_nbDimensions(), true);
-	m_gst.computeinvTRegions(m_exemplar, m_regionsInt, m_invT);
+	const int invTSize = 128;
+	if(m_exemplarPCA.is_initialized())
+	{
+		m_exemplarPCA.for_all_images([&] (ImageVectorType::ImageScalarType &image, unsigned int d)
+		{
+			image += 0.5;
+		});
+		m_invT.init(invTSize, m_nbRegions, m_exemplarPCA.get_nbDimensions(), true);
+		m_gst.computeinvTRegions(m_exemplarPCA, m_regionsInt, m_invT);
 	
-	m_TG.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
-	m_gst.computeTinputRegions(m_exemplar, m_regionsInt, m_TG, false, false);
+		m_TG.init(m_exemplarPCA.get_width(), m_exemplarPCA.get_height(), m_exemplarPCA.get_nbDimensions(), true);
+		m_gst.computeTinputRegions(m_exemplarPCA, m_regionsInt, m_TG, false, false);
+	}
+	else
+	{
+		m_invT.init(invTSize, m_nbRegions, m_exemplar.get_nbDimensions(), true);
+		m_gst.computeinvTRegions(m_exemplar, m_regionsInt, m_invT);
+	
+		m_TG.init(m_exemplar.get_width(), m_exemplar.get_height(), m_exemplar.get_nbDimensions(), true);
+		m_gst.computeTinputRegions(m_exemplar, m_regionsInt, m_TG, false, false);
+	}
 }
 
 void LocallyStationaryTextureSynthesizer::precomputationsLocalPCAs()
@@ -898,11 +1088,28 @@ void LocallyStationaryTextureSynthesizer::computeExemplarWithOnlyPCAOfRegion(Ima
 	{
 		for(int y=0; y<texture.get_height(); ++y)
 		{
-			ImageVectorType::VectorType mean = m_invPCA.get_pixel(0, region);
-			ImageVectorType::VectorType p1 = m_invPCA.get_pixel(1, region);
-			ImageVectorType::VectorType p2 = m_invPCA.get_pixel(2, region);
-			ImageVectorType::VectorType p3 = m_invPCA.get_pixel(3, region);
-			ImageVectorType::VectorType inputPCA = m_exemplarPCA.get_pixel(x, y);
+			ImageVectorType::VectorType inputPCA;
+			
+			if(m_TG.is_initialized())
+			{
+				ImageVectorType::VectorType input = m_TG.get_pixel(x, y);
+				int r, g, b;
+				r = MAX(0, MIN(input[0]*(m_invT.get_width()-1), m_invT.get_width()-1));
+				g = MAX(0, MIN(input[1]*(m_invT.get_width()-1), m_invT.get_width()-1));
+				b = MAX(0, MIN(input[2]*(m_invT.get_width()-1), m_invT.get_width()-1));
+				inputPCA.resize(3);
+				inputPCA.write[0] = m_invT.get_pixel(r, region, 0) - 0.5;
+				inputPCA.write[1] = m_invT.get_pixel(g, region, 1) - 0.5;
+				inputPCA.write[2] = m_invT.get_pixel(b, region, 2) - 0.5;
+			}
+			else
+			{
+				inputPCA = m_exemplarPCA.get_pixel(x, y);
+			}
+			ImageVectorType::VectorType mean = m_invPCA.get_pixel(0, region+1);
+			ImageVectorType::VectorType p1 = m_invPCA.get_pixel(1, region+1);
+			ImageVectorType::VectorType p2 = m_invPCA.get_pixel(2, region+1);
+			ImageVectorType::VectorType p3 = m_invPCA.get_pixel(3, region+1);
 			ImageVectorType::VectorType v = mean;
 			v.write[0] += inputPCA[0]*p1[0] + inputPCA[1]*p2[0] + inputPCA[2]*p3[0];
 			v.write[1] += inputPCA[0]*p1[1] + inputPCA[1]*p2[1] + inputPCA[2]*p3[1];
@@ -916,6 +1123,99 @@ void LocallyStationaryTextureSynthesizer::computeExemplarWithOnlyPCAOfRegion(Ima
 		texture.toImageIndexed(tmpResultRef, 0);
 		tmpResultRef->save_png(String("debug/pcaFullTransfer_num.png").replace("num", String::num_int64(region)));
 	}
+}
+
+LocallyStationaryTextureSynthesizer::ImageVectorType::VectorType LocallyStationaryTextureSynthesizer::footprintVariance(const ImageVectorType &texture, unsigned int level, uint64_t region)
+{
+	//This function requires the texture to be a power of 2 square, otherwise you need to replace y+= and x+= (and you do not want that)
+	//I need to replace what the VectorType is. It is too inconvenient.
+	int windowWidth = int(pow(2.0f, float(level)));
+	ImageVectorType::VectorType averageVariance;
+	averageVariance.resize(texture.get_nbDimensions());
+	for(unsigned int d=0; d<texture.get_nbDimensions(); ++d)
+	{
+		averageVariance.write[d] = 0.0f;
+	}
+	int totalNbHits = 0;
+	for(int y=0; y<texture.get_height(); y+=windowWidth)
+	{
+		for(int x=0; x<texture.get_width(); x+=windowWidth)
+		{
+			ImageVectorType::VectorType m;
+			ImageVectorType::VectorType v;
+			m.resize(texture.get_nbDimensions());
+			v.resize(texture.get_nbDimensions());
+			for(unsigned int d=0; d<texture.get_nbDimensions(); ++d)
+			{
+				m.write[d] = 0.0f;
+				v.write[d] = 0.0f;
+			}
+			unsigned int nbHits = 0;
+			//computing the mean over the footprint
+			for(int y2=0; y2<windowWidth; ++y2)
+			{
+				for(int x2=0; x2<windowWidth; ++x2)
+				{
+					int xM = (x + x2)%texture.get_width();
+					int yM = (y + y2)%texture.get_height();
+					int regionPix = m_regionsInt.get_pixel(xM, yM);
+					if(regionPix == region)
+					{
+						++nbHits;
+						for(unsigned int d=0; d<texture.get_nbDimensions(); ++d)
+						{
+							m.write[d] += texture.get_pixel(xM, yM, d);
+						}
+					}
+				}
+			}
+			for(unsigned int d=0; d<texture.get_nbDimensions(); ++d)
+			{
+				m.write[d] /= nbHits;
+			}
+			if(nbHits>=2)
+			{
+				totalNbHits += nbHits;
+				//computing the variance over the footprint, using the mean
+				for(int y2=0; y2<windowWidth; ++y2)
+				{
+					for(int x2=0; x2<windowWidth; ++x2)
+					{
+						int xM = (x + x2)%texture.get_width();
+						int yM = (y + y2)%texture.get_height();
+						int regionPix = m_regionsInt.get_pixel(xM, yM);
+						if(regionPix == region)
+						{
+							for(unsigned int d=0; d<texture.get_nbDimensions(); ++d)
+							{
+								float localVariance = texture.get_pixel(xM, yM, d) - m[d];
+								v.write[d] += localVariance*localVariance;
+							}
+						}
+					}
+				}
+				for(unsigned int d=0; d<texture.get_nbDimensions(); ++d)
+				{
+					averageVariance.write[d] += v.write[d]*nbHits;
+				}
+			}
+		}
+	}
+	if(totalNbHits > 0)
+	{
+		for(unsigned int d=0; d<texture.get_nbDimensions(); ++d)
+		{
+			averageVariance.write[d] /= (totalNbHits*totalNbHits);
+		}
+	}
+	String debugString = String("Average variance of region XX at level LL is (NUM1, NUM2, NUM3)");
+	debugString = debugString.replace("XX", String::num_int64(region));
+	debugString = debugString.replace("LL", String::num_int64(level));
+	debugString = debugString.replace("NUM1", String::num(averageVariance[0], 3));
+	debugString = debugString.replace("NUM2", String::num(averageVariance[1], 3));
+	debugString = debugString.replace("NUM3", String::num(averageVariance[2], 3));
+	print_line(debugString);
+	return averageVariance;
 }
 
 LocallyStationaryTextureSynthesizer::ImageVectorType LocallyStationaryTextureSynthesizer::debug_visualizeRegions(const ImageMultipleRegionType &map)
@@ -972,6 +1272,7 @@ void LocallyStationaryTextureSynthesizer::_bind_methods()
 	ClassDB::bind_method(D_METHOD("compactContributionsToTexture2DArray", "compactContributionsRef"), &LocallyStationaryTextureSynthesizer::compactContributionsToTexture2DArray);
 	ClassDB::bind_method(D_METHOD("compactContributionsToImage", "compactContributionsRef"), &LocallyStationaryTextureSynthesizer::compactContributionsToImage);
 	ClassDB::bind_method(D_METHOD("groundTruthAtlasesTo2DArrayAlbedo", "atlasesRef", "originsRef", "regionRef"), &LocallyStationaryTextureSynthesizer::groundTruthAtlasesTo2DArrayAlbedo);
+	ClassDB::bind_method(D_METHOD("invTAndPCAToTexture2DArrayAlbedo", "invFilteredRef"), &LocallyStationaryTextureSynthesizer::invTAndPCAToTexture2DArrayAlbedo);
 	ClassDB::bind_method(D_METHOD("computeInvT"), &LocallyStationaryTextureSynthesizer::computeInvT);
 	ClassDB::bind_method(D_METHOD("computeGaussianExemplar"), &LocallyStationaryTextureSynthesizer::computeGaussianExemplar);
 	ClassDB::bind_method(D_METHOD("computeExemplarInLocalPCAs"), &LocallyStationaryTextureSynthesizer::computeExemplarInLocalPCAs);
