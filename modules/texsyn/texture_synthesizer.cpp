@@ -227,6 +227,12 @@ void TextureSynthesizer::computeImageVector()
 	fillTexture(ALPHA, 1);
 	fillTexture(RIM, 1);
 
+	String debugLine("computed an image vector of size (WID, HEI, DIM)");
+	debugLine.replace("WID", String::num_int64(width));
+	debugLine.replace("HEI", String::num_int64(height));
+	debugLine.replace("DIM", String::num_int64(nbDimensions));
+	print_line(debugLine);
+
 	return;
 }
 
@@ -262,6 +268,7 @@ m_nbRegions(0),
 m_regionsInt(),
 m_multiIdMap(),
 m_gst(),
+m_debugSaves(false),
 m_invT(),
 m_TG(),
 m_exemplarPCA(),
@@ -274,7 +281,7 @@ void LocallyStationaryTextureSynthesizer::setRegionMap(Ref<Image> regions)
 {
 	ERR_FAIL_COND_MSG(regions.is_null(), "regions must not be null.");
 
-	const int minSize = 512;
+	const int minSize = 2048;
 
 	//collecting all the ids
 	using MapType = HashMap<Color, int>;
@@ -342,6 +349,23 @@ void LocallyStationaryTextureSynthesizer::setRegionMap(Ref<Image> regions)
 	m_nbRegions = newNbRegions;
 	//Pre-computing the region mask bitmask version
 	TexSyn::GaussianTransfer::toMultipleRegions(m_multiIdMap, m_regionsInt);
+	print_line(String("Computed a region map with NUM regions.").replace("NUM", String::num_int64(m_nbRegions)));
+
+	if(m_debugSaves)
+	{
+		TexSyn::ImageScalar<double> regionsOutput;
+		regionsOutput.init(m_regionsInt.get_width(), m_regionsInt.get_height(), true);
+		regionsOutput.for_all_pixels([&] (double & pix, int x, int y)
+		{
+			int region = m_regionsInt.get_pixel(x, y);
+			pix = float(region)/(m_nbRegions-1);
+		});
+
+		Ref<Image> tmpResultRef;
+		tmpResultRef = Image::create_empty(regionsOutput.get_width(), regionsOutput.get_height(), false, Image::FORMAT_RF);
+		regionsOutput.toImage(tmpResultRef, 0);
+		tmpResultRef->save_png("debug/regionMapInt.png");
+	}
 }
 
 void LocallyStationaryTextureSynthesizer::originsMapToImage(Ref<Image> origins)
