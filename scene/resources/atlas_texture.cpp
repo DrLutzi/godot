@@ -30,8 +30,6 @@
 
 #include "atlas_texture.h"
 
-#include "core/core_string_names.h"
-
 int AtlasTexture::get_width() const {
 	if (region.size.width == 0) {
 		if (atlas.is_valid()) {
@@ -245,11 +243,16 @@ bool AtlasTexture::is_pixel_opaque(int p_x, int p_y) const {
 }
 
 Ref<Image> AtlasTexture::get_image() const {
-	if (!atlas.is_valid() || !atlas->get_image().is_valid()) {
+	if (atlas.is_null() || region.size.x <= 0 || region.size.y <= 0) {
 		return Ref<Image>();
 	}
 
-	return atlas->get_image()->get_region(region);
+	Ref<Image> atlas_image = atlas->get_image();
+	if (atlas_image.is_null()) {
+		return Ref<Image>();
+	}
+
+	return atlas_image->get_region(region);
 }
 
 AtlasTexture::AtlasTexture() {}
